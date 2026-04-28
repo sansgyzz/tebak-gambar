@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tebak Gambar Online</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; color: #1a1a1a; min-height: 100vh; }
+    h1 { font-size: 22px; font-weight: 600; text-align: center; padding: 16px 0 8px; color: #222; }
+    .screen { display: none; max-width: 960px; margin: 0 auto; padding: 12px; }
+    .screen.active { display: block; }
+    .card { background: #fff; border-radius: 12px; border: 1px solid #e5e7eb; padding: 20px; margin-bottom: 12px; }
+    label { font-size: 13px; color: #666; display: block; margin-bottom: 4px; }
+    input, select { width: 100%; border: 1px solid #d1d5db; border-radius: 8px; padding: 9px 12px; font-size: 14px; margin-bottom: 10px; outline: none; transition: border .2s; }
+    input:focus, select:focus { border-color: #6366f1; }
+    .btn { cursor: pointer; border-radius: 8px; font-size: 14px; font-weight: 500; padding: 10px 18px; border: none; transition: background .15s, transform .1s; }
+    .btn:active { transform: scale(0.98); }
+    .btn-primary { background: #6366f1; color: #fff; width: 100%; }
+    .btn-primary:hover { background: #4f46e5; }
+    .btn-outline { background: transparent; border: 1px solid #d1d5db; color: #374151; }
+    .btn-outline:hover { background: #f9fafb; }
+    .btn-sm { padding: 6px 12px; font-size: 13px; }
+    .room-code { font-size: 32px; font-weight: 700; letter-spacing: 10px; text-align: center; padding: 14px; background: #f5f3ff; border-radius: 10px; color: #4f46e5; margin-bottom: 12px; cursor: pointer; }
+    .room-code::after { content: 'Klik untuk salin'; font-size: 11px; color: #a5b4fc; display: block; letter-spacing: 1px; font-weight: 400; }
+    .player-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+    .chip { background: #ede9fe; color: #4f46e5; border-radius: 20px; padding: 5px 14px; font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 6px; }
+    .chip .dot { width: 8px; height: 8px; border-radius: 50%; }
+    .host-badge { background: #fef3c7; color: #92400e; border-radius: 6px; font-size: 11px; padding: 1px 6px; margin-left: 4px; }
+    .game-wrap { display: grid; grid-template-columns: 1fr 210px; gap: 10px; }
+    @media (max-width: 600px) { .game-wrap { grid-template-columns: 1fr; } }
+    .round-bar { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: #555; margin-bottom: 6px; }
+    .timer-wrap { height: 6px; background: #e5e7eb; border-radius: 3px; overflow: hidden; margin-bottom: 8px; }
+    .timer-fill { height: 100%; width: 100%; background: #22c55e; transition: width 1s linear, background .5s; border-radius: 3px; }
+    .word-hint { text-align: center; margin-bottom: 8px; }
+    .word-letters { font-size: 22px; font-weight: 600; letter-spacing: 6px; color: #1a1a1a; }
+    .hint-text { font-size: 12px; color: #9ca3af; margin-top: 3px; }
+    .draw-label { font-size: 12px; background: #f0fdf4; color: #15803d; border-radius: 6px; padding: 4px 10px; display: inline-block; margin-bottom: 6px; font-weight: 500; }
+    .your-word { font-size: 13px; background: #eff6ff; color: #1d4ed8; border-radius: 6px; padding: 5px 12px; display: inline-block; margin-bottom: 6px; font-weight: 600; }
+    #draw-canvas { display: block; width: 100%; border: 1.5px solid #e5e7eb; border-radius: 10px; background: #fff; cursor: crosshair; touch-action: none; }
+    .toolbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+    .color-dot { width: 26px; height: 26px; border-radius: 50%; cursor: pointer; border: 3px solid transparent; flex-shrink: 0; transition: transform .1s; }
+    .color-dot:hover { transform: scale(1.15); }
+    .color-dot.active { border-color: #1a1a1a; }
+    .sz-btn { background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 6px; padding: 3px 9px; font-size: 12px; cursor: pointer; }
+    .sz-btn.active { background: #6366f1; color: #fff; border-color: #6366f1; }
+    .tool-btn { background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 6px; padding: 3px 9px; font-size: 12px; cursor: pointer; }
+    .tool-btn.clear { color: #ef4444; }
+    .sidebar { display: flex; flex-direction: column; gap: 8px; }
+    .score-list { background: #fafafa; border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; max-height: 200px; overflow-y: auto; }
+    .score-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 1px solid #f3f4f6; font-size: 12px; }
+    .score-row:last-child { border: none; }
+    .score-name { font-weight: 600; color: #374151; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; gap: 4px; }
+    .score-pts { color: #6b7280; }
+    .you-tag { font-size: 10px; background: #e0e7ff; color: #4338ca; border-radius: 4px; padding: 1px 5px; }
+    .chat-wrap { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+    .chat-log { background: #fafafa; border: 1px solid #e5e7eb; border-radius: 10px; padding: 8px; overflow-y: auto; max-height: 160px; flex: 1; }
+    .chat-msg { font-size: 11px; padding: 2px 0; border-bottom: 1px solid #f3f4f6; }
+    .chat-msg:last-child { border: none; }
+    .chat-user { font-weight: 600; color: #374151; }
+    .chat-text { color: #6b7280; }
+    .chat-msg.correct .chat-user { color: #059669; }
+    .chat-msg.correct .chat-text { color: #059669; font-weight: 600; }
+    .chat-msg.system { color: #9ca3af; font-style: italic; }
+    .chat-input-row { display: flex; gap: 5px; }
+    .chat-input-row input { flex: 1; margin: 0; padding: 6px 10px; font-size: 12px; }
+    .chat-input-row button { padding: 6px 10px; font-size: 12px; flex-shrink: 0; }
+    #toast { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); background: #1f2937; color: #fff; padding: 10px 20px; border-radius: 8px; font-size: 14px; display: none; z-index: 999; }
+    .result-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-bottom: 16px; }
+    .result-card { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px 10px; text-align: center; }
+    .result-card.first { background: #fef9c3; border-color: #fbbf24; }
+    .result-rank { font-size: 24px; margin-bottom: 4px; }
+    .result-name { font-size: 13px; font-weight: 600; color: #374151; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .result-score { font-size: 12px; color: #6b7280; margin-top: 2px; }
+    .divider { border: none; border-top: 1px solid #e5e7eb; margin: 12px 0; }
+    .notice { font-size: 13px; color: #9ca3af; text-align: center; padding: 8px 0; }
+    .flex-row { display: flex; gap: 8px; }
+    .flex-row .btn { flex: 1; }
+  </style>
+</head>
+<body>
+<div id="toast"></div>
+<h1>🎨 Tebak Gambar Online</h1>
+<div id="screen-menu" class="screen active">
+  <div class="card">
+    <label>Nama kamu</label>
+    <input id="my-name" type="text" placeholder="Masukkan nama..." maxlength="15" />
+    <hr class="divider" />
+    <label style="font-size:15px;font-weight:600;color:#374151;margin-bottom:10px;">Buat Ruangan Baru</label>
+    <button class="btn btn-primary" onclick="createRoom()">+ Buat Ruangan</button>
+    <hr class="divider" />
+    <label style="font-size:15px;font-weight:600;color:#374151;margin-bottom:10px;">Gabung Ruangan</label>
+    <label>Kode ruangan</label>
+    <input id="join-code" type="text" placeholder="Contoh: AB3X" maxlength="4" style="text-transform:uppercase" />
+    <button class="btn btn-outline" onclick="joinRoom()" style="width:100%">Gabung</button>
+  </div>
+</div>
+<div id="screen-lobby" class="screen">
+  <div class="card">
+    <label style="text-align:center;display:block;margin-bottom:6px;font-size:13px;color:#9ca3af;">Kode Ruangan (klik untuk salin)</label>
+    <div class="room-code" id="lobby-code" onclick="copyCode()">----</div>
+    <label>Pemain di ruangan:</label>
+    <div class="player-chips" id="lobby-chips"></div>
+    <p class="notice" id="lobby-notice">Menunggu pemain lain bergabung...</p>
+    <button class="btn btn-primary" id="start-btn" onclick="startGame()" style="display:none">▶ Mulai Game</button>
+  </div>
+</div>
+<div id="screen-game" class="screen">
+  <div class="round-bar">
+    <span id="round-label">Ronde 1</span>
+    <span id="timer-label" style="font-weight:600;color:#6366f1;">60</span>
+  </div>
+  <div class="timer-wrap"><div class="timer-fill" id="timer-fill"></div></div>
+  <div class="game-wrap">
+    <div class="game-main">
+      <div id="draw-indicator"></div>
+      <div id="word-area" class="word-hint"></div>
+      <div id="toolbar" class="toolbar" style="display:none">
+        <div class="color-dot active" style="background:#1a1a1a" onclick="setColor('#1a1a1a',this)"></div>
+        <div class="color-dot" style="background:#ef4444" onclick="setColor('#ef4444',this)"></div>
+        <div class="color-dot" style="background:#3b82f6" onclick="setColor('#3b82f6',this)"></div>
+        <div class="color-dot" style="background:#22c55e" onclick="setColor('#22c55e',this)"></div>
+        <div class="color-dot" style="background:#f59e0b" onclick="setColor('#f59e0b',this)"></div>
+        <div class="color-dot" style="background:#a855f7" onclick="setColor('#a855f7',this)"></div>
+        <div class="color-dot" style="background:#ec4899" onclick="setColor('#ec4899',this)"></div>
+        <div class="color-dot" style="background:#fff;border:2px solid #d1d5db" onclick="setColor('#fff',this)"></div>
+        <span class="sz-btn active" onclick="setSize(3,this)">S</span>
+        <span class="sz-btn" onclick="setSize(9,this)">M</span>
+        <span class="sz-btn" onclick="setSize(20,this)">L</span>
+        <span class="tool-btn" onclick="setEraser()">Hapus</span>
+        <span class="tool-btn clear" onclick="clearCanvas()">Bersih</span>
+      </div>
+      <canvas id="draw-canvas" height="320"></canvas>
+    </div>
+    <div class="sidebar">
+      <div style="font-size:12px;font-weight:600;color:#6b7280;margin-bottom:2px;">Skor</div>
+      <div class="score-list" id="score-list"></div>
+      <div class="chat-wrap">
+        <div style="font-size:12px;font-weight:600;color:#6b7280;">Chat / Tebak</div>
+        <div class="chat-log" id="chat-log"></div>
+        <div class="chat-input-row">
+          <input type="text" id="guess-input" placeholder="Ketik tebakan..." maxlength="40" onkeydown="if(event.key==='Enter')sendGuess()" />
+          <button class="btn btn-outline btn-sm" onclick="sendGuess()">Kirim</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="screen-result" class="screen">
+  <div class="card">
+    <h2 style="font-size:18px;font-weight:600;margin-bottom:14px;text-align:center;">🏆 Hasil Akhir</h2>
+    <div class="result-grid" id="result-grid"></div>
+    <div class="flex-row">
+      <button class="btn btn-primary" onclick="playAgain()">Main Lagi</button>
+      <button class="btn btn-outline" onclick="backToMenu()">Menu</button>
+    </div>
+  </div>
+</div>
+<script>
+const socket = io();
+let myName='',myRoom='',isDrawer=false,isHost=false;
+let drawColor='#1a1a1a',drawSize=3,erasing=false;
+let drawing=false,lx=0,ly=0;
+const COLORS=['#6366f1','#ef4444','#22c55e','#f59e0b','#ec4899','#06b6d4','#a855f7','#14b8a6','#f97316','#84cc16'];
+function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById(id).classList.add('active');}
+function toast(msg,dur=2500){const t=document.getElementById('toast');t.textContent=msg;t.style.display='block';setTimeout(()=>t.style.display='none',dur);}
+function addChat(name,text,correct=false,system=false){const log=document.getElementById('chat-log');const div=document.createElement('div');div.className='chat-msg'+(correct?' correct':system?' system':'');if(system){div.textContent=text;}else div.innerHTML=`<span class="chat-user">${name}:</span> <span class="chat-text">${text}${correct?' ✓':''}</span>`;log.appendChild(div);log.scrollTop=log.scrollHeight;}
+function addChatSystem(text){addChat('',text,false,true);}
+function renderScores(scores){const sorted=[...scores].sort((a,b)=>b.score-a.score);const medals=['🥇','🥈','🥉'];document.getElementById('score-list').innerHTML=sorted.map((p,i)=>`<div class="score-row"><span class="score-name">${medals[i]||''} ${p.name}${p.name===myName?'<span class="you-tag">kamu</span>':''}</span><span class="score-pts">${p.score}pt</span></div>`).join('');}
+function createRoom(){myName=document.getElementById('my-name').value.trim();if(!myName){toast('Masukkan namamu dulu!');return;}isHost=true;socket.emit('create_room',{name:myName,totalRounds:0});}
+function joinRoom(){myName=document.getElementById('my-name').value.trim();const code=document.getElementById('join-code').value.trim().toUpperCase();if(!myName){toast('Masukkan namamu dulu!');return;}if(!code){toast('Masukkan kode ruangan!');return;}socket.emit('join_room',{name:myName,code});}
+function copyCode(){navigator.clipboard.writeText(myRoom).then(()=>toast('Kode disalin: '+myRoom));}
+function startGame(){socket.emit('start_game');}
+function playAgain(){socket.emit('play_again');}
+function backToMenu(){location.reload();}
+function sendGuess(){const input=document.getElementById('guess-input');const text=input.value.trim();if(!text)return;input.value='';if(isDrawer){socket.emit('chat',{text});return;}socket.emit('guess',{text});}
+function renderLobbyChips(players){document.getElementById('lobby-chips').innerHTML=players.map((p,i)=>`<div class="chip"><div class="dot" style="background:${COLORS[i%COLORS.length]}"></div>${p}${i===0?'<span class="host-badge">host</span>':''}</div>`).join('');document.getElementById('lobby-notice').textContent=`${players.length} pemain bergabung`;}
+socket.on('room_created',({code,players})=>{myRoom=code;document.getElementById('lobby-code').innerHTML=code+'<span style="display:block;font-size:11px;color:#a5b4fc;letter-spacing:1px;font-weight:400;">Klik untuk salin</span>';renderLobbyChips(players);document.getElementById('start-btn').style.display='block';showScreen('screen-lobby');toast('Ruangan dibuat! Bagikan kode ke teman.');});
+socket.on('player_joined',({name,players})=>{renderLobbyChips(players);addChatSystem(`${name} bergabung!`);if(isHost)document.getElementById('start-btn').style.display='block';});
+socket.on('player_left',({name,players})=>{renderLobbyChips(players);addChatSystem(`${name} keluar dari ruangan.`);});
+socket.on('game_started',()=>{showScreen('screen-game');setupCanvas();addChatSystem('Game dimulai!');});
+socket.on('round_start',({round,totalRounds,drawerName,drawerId,hint,wordLength})=>{isDrawer=(socket.id===drawerId);clearCanvas(false);document.getElementById('round-label').textContent=`Ronde ${round} / ${totalRounds} — ${drawerName} menggambar`;const wordArea=document.getElementById('word-area');const toolbar=document.getElementById('toolbar');const indicator=document.getElementById('draw-indicator');if(isDrawer){toolbar.style.display='flex';indicator.innerHTML='<div class="draw-label">Giliranmu menggambar!</div>';wordArea.innerHTML='';}else{toolbar.style.display='none';indicator.innerHTML=`<div style="font-size:12px;color:#9ca3af;margin-bottom:5px;">${drawerName} sedang menggambar...</div>`;const display=Array(wordLength).fill('_').join(' ');wordArea.innerHTML=`<div class="word-letters">${display}</div><div class="hint-text">Petunjuk: ${hint}</div>`;}addChatSystem(`— Ronde ${round} dimulai —`);});
+socket.on('your_word',(word)=>{document.getElementById('word-area').innerHTML=`<div class="your-word">Kata: ${word}</div>`;});
+socket.on('timer',(val)=>{document.getElementById('timer-label').textContent=val;const pct=(val/60)*100;const fill=document.getElementById('timer-fill');fill.style.width=pct+'%';fill.style.background=pct>50?'#22c55e':pct>25?'#f59e0b':'#ef4444';});
+socket.on('scores',(scores)=>renderScores(scores));
+socket.on('chat',({name,text,correct})=>addChat(name,text,correct));
+socket.on('round_end',({word,scores})=>{addChatSystem(`Waktu habis! Jawaban: "${word}"`);renderScores(scores);});
+socket.on('draw',({x1,y1,x2,y2,color,size})=>{if(!ctx)return;ctx.strokeStyle=color;ctx.lineWidth=size;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();});
+socket.on('clear_canvas',()=>clearCanvas(false));
+socket.on('game_over',(results)=>{const medals=['🥇','🥈','🥉'];document.getElementById('result-grid').innerHTML=results.map((p,i)=>`<div class="result-card${i===0?' first':''}"><div class="result-rank">${medals[i]||'🏅'}</div><div class="result-name">${p.name}${p.name===myName?' (kamu)':''}</div><div class="result-score">${p.score} poin</div></div>`).join('');showScreen('screen-result');});
+socket.on('error',(msg)=>toast('⚠ '+msg,3000));
+let canvas,ctx;
+function setupCanvas(){canvas=document.getElementById('draw-canvas');canvas.width=canvas.offsetWidth||440;canvas.height=320;ctx=canvas.getContext('2d');ctx.lineCap='round';ctx.lineJoin='round';canvas.onmousedown=e=>{if(!isDrawer)return;drawing=true;const r=canvas.getBoundingClientRect();lx=(e.clientX-r.left)*(canvas.width/r.width);ly=(e.clientY-r.top)*(canvas.height/r.height);};canvas.onmousemove=e=>{if(!drawing||!isDrawer)return;const r=canvas.getBoundingClientRect();const x=(e.clientX-r.left)*(canvas.width/r.width);const y=(e.clientY-r.top)*(canvas.height/r.height);emitDraw(lx,ly,x,y);lx=x;ly=y;};canvas.onmouseup=()=>drawing=false;canvas.onmouseleave=()=>drawing=false;canvas.ontouchstart=e=>{e.preventDefault();if(!isDrawer)return;drawing=true;const r=canvas.getBoundingClientRect();const t=e.touches[0];lx=(t.clientX-r.left)*(canvas.width/r.width);ly=(t.clientY-r.top)*(canvas.height/r.height);};canvas.ontouchmove=e=>{e.preventDefault();if(!drawing||!isDrawer)return;const r=canvas.getBoundingClientRect();const t=e.touches[0];const x=(t.clientX-r.left)*(canvas.width/r.width);const y=(t.clientY-r.top)*(canvas.height/r.height);emitDraw(lx,ly,x,y);lx=x;ly=y;};canvas.ontouchend=()=>drawing=false;}
+function emitDraw(x1,y1,x2,y2){const c=erasing?'#fff':drawColor;const s=erasing?drawSize*3:drawSize;ctx.strokeStyle=c;ctx.lineWidth=s;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();socket.emit('draw',{x1,y1,x2,y2,color:c,size:s});}
+function clearCanvas(emit=true){if(ctx)ctx.clearRect(0,0,canvas.width,canvas.height);if(emit&&isDrawer)socket.emit('clear_canvas');}
+function setColor(c,el){drawColor=c;erasing=false;document.querySelectorAll('.color-dot').forEach(b=>b.classList.remove('active'));el.classList.add('active');}
+function setSize(s,el){drawSize=s;document.querySelectorAll('.sz-btn').forEach(b=>b.classList.remove('active'));el.classList.add('active');}
+function setEraser(){erasing=true;}
+</script>
+</body>
+</html>
