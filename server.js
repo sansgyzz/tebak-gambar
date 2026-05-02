@@ -9,8 +9,9 @@ const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-const WIN_SCORE = 120;
-const WORD_CHOICES = 3; // berapa pilihan kata yang diberikan ke drawer
+const VALID_WIN_SCORES = [50, 80, 100, 120, 150, 200];
+const DEFAULT_WIN_SCORE = 120;
+const WORD_CHOICES = 3;
 
 const WORDS = [
   'kucing','mobil','pizza','pohon','sepeda','ikan','rumah','pesawat',
@@ -18,14 +19,18 @@ const WORDS = [
   'apel','kapal','jam','kamera','sendok','payung','topi','kunci',
   'bola','kursi','pisang','robot','hujan','bulan','naga','jembatan',
   'kipas','lampu','sepatu','kacamata','piring','garpu','televisi',
-  'telepon','semangka','donat','roti','balon','pensil','tas','sepatu',
+  'telepon','semangka','donat','roti','balon','pensil','tas',
   'anjing','burung','harimau','gajah','kuda','sapi','ayam','bebek',
   'perahu','kereta','motor','truk','bis','helikopter','roket',
-  'apel','mangga','jeruk','anggur','strawberry','semangka','pepaya',
-  'wortel','tomat','bawang','kentang','jagung','cabai',
-  'kursi','meja','lemari','kasur','pintu','jendela','tangga',
-  'pensil','penggaris','gunting','lem','kertas','buku','tas',
+  'mangga','jeruk','anggur','pepaya','wortel','tomat','bawang',
+  'kentang','jagung','cabai','meja','lemari','kasur','pintu',
+  'jendela','tangga','penggaris','gunting','lem','kertas',
 ];
+
+// Clue: huruf pertama + panjang kata
+function makeClue(word) {
+  return word[0].toUpperCase() + ' _ _ _ (' + word.length + ' huruf)';
+}
 
 const rooms = {};
 
@@ -48,7 +53,7 @@ function getRandomWords(count) {
 function checkWin(code) {
   const room = rooms[code];
   if (!room) return false;
-  const winner = room.players.find(p => p.score >= WIN_SCORE);
+  const winner = room.players.find(p => p.score >= room.winScore);
   if (winner) {
     clearInterval(room.timerInterval);
     const sorted = [...room.players].sort((a, b) => b.score - a.score);
@@ -71,10 +76,10 @@ function startRound(code) {
   room.currentWord = null;
   room.wordChoices = getRandomWords(WORD_CHOICES);
   room.choosingWord = true;
+  room.clueGiven = false;
 
   const drawer = room.players[room.drawerIndex % room.players.length];
 
-  // Beritahu semua bahwa drawer sedang memilih kata
   io.to(code).emit('choosing_word', {
     round: room.round + 1,
     totalRounds: room.totalRounds,
@@ -82,16 +87,13 @@ function startRound(code) {
     drawerId: drawer.id,
   });
 
-  // Kirim pilihan kata hanya ke drawer
   io.to(drawer.id).emit('word_choices', room.wordChoices);
 
   broadcastScores(code);
 
-  // Timeout 15 detik untuk pilih kata, kalau tidak dipilih ambil random
   room.choiceTimeout = setTimeout(() => {
     if (room.choosingWord) {
-      const auto = room.wordChoices[0];
-      handleWordChosen(code, auto);
+      handleWordChosen(code, room.wordChoices[0]);
     }
   }, 15000);
 }
@@ -111,14 +113,32 @@ function handleWordChosen(code, word) {
     drawerName: drawer.name,
     drawerId: drawer.id,
     wordLength: word.length,
+    clueEnabled: room.clueEnabled,
   });
 
   io.to(drawer.id).emit('your_word', word);
 
   let timeLeft = 60;
+
+  // Beri clue di detik ke-30 jika diaktifkan
+  room.clueGiven = false;
+
   room.timerInterval = setInterval(() => {
     timeLeft--;
     io.to(code).emit('timer', timeLeft);
+
+    // Kirim clue ke penebak (bukan drawer) di detik 30
+    if (room.clueEnabled && timeLeft === 30 && !room.clueGiven) {
+      room.clueGiven = true;
+      const clue = makeClue(word);
+      // Kirim ke semua kecuali drawer
+      room.players.forEach(p => {
+        if (p.id !== drawer.id) {
+          io.to(p.id).emit('clue', clue);
+        }
+      });
+    }
+
     if (timeLeft <= 0) {
       clearInterval(room.timerInterval);
       endRound(code);
@@ -133,7 +153,7 @@ function endRound(code) {
 
   const drawer = room.players[room.drawerIndex % room.players.length];
   const guessedCount = room.players.filter(p => p.guessed).length;
-  if (guessedCount > 0) drawer.score += guessedCount * 5; // kecil untuk drawer
+  if (guessedCount > 0) drawer.score += guessedCount * 5;
 
   io.to(code).emit('round_end', {
     word: room.currentWord || '???',
@@ -161,23 +181,25 @@ function endGame(code) {
 
 io.on('connection', (socket) => {
 
-  socket.on('check_room', ({ code }) => {
-    const room = rooms[code];
-    if (room && !room.started) socket.emit('room_valid', { code, players: room.players.map(p => p.name) });
-    else if (room && room.started) socket.emit('error', 'Game sudah dimulai!');
-    else socket.emit('error', 'Ruangan tidak ditemukan!');
-  });
-
-  socket.on('create_room', ({ name }) => {
+  socket.on('create_room', ({ name, winScore, clueEnabled }) => {
     const code = makeRoomCode();
+    const ws = VALID_WIN_SCORES.includes(Number(winScore)) ? Number(winScore) : DEFAULT_WIN_SCORE;
     rooms[code] = {
       players: [{ id: socket.id, name, score: 0, guessed: false }],
       drawerIndex: 0, round: 0, totalRounds: 10,
       currentWord: null, wordChoices: [], choosingWord: false,
       timerInterval: null, choiceTimeout: null, started: false,
+      winScore: ws,
+      clueEnabled: !!clueEnabled,
+      clueGiven: false,
     };
     socket.join(code);
-    socket.emit('room_created', { code, players: rooms[code].players.map(p => p.name) });
+    socket.emit('room_created', {
+      code,
+      players: rooms[code].players.map(p => p.name),
+      winScore: ws,
+      clueEnabled: !!clueEnabled,
+    });
   });
 
   socket.on('join_room', ({ name, code }) => {
@@ -188,6 +210,7 @@ io.on('connection', (socket) => {
     room.players.push({ id: socket.id, name, score: 0, guessed: false });
     socket.join(code);
     io.to(code).emit('player_joined', { name, players: room.players.map(p => p.name) });
+    socket.emit('room_info', { winScore: room.winScore, clueEnabled: room.clueEnabled });
   });
 
   socket.on('start_game', () => {
@@ -198,11 +221,10 @@ io.on('connection', (socket) => {
     if (room.players.length < 2) { socket.emit('error', 'Minimal 2 pemain!'); return; }
     room.started = true;
     room.totalRounds = room.players.length * 2;
-    io.to(code).emit('game_started', { winScore: WIN_SCORE });
+    io.to(code).emit('game_started', { winScore: room.winScore, clueEnabled: room.clueEnabled });
     startRound(code);
   });
 
-  // Drawer memilih kata
   socket.on('choose_word', ({ word }) => {
     const code = getRoomBySocket(socket.id);
     if (!code) return;
@@ -238,7 +260,6 @@ io.on('connection', (socket) => {
     if (correct) {
       player.guessed = true;
       const alreadyGuessed = room.players.filter(p => p.guessed).length;
-      // Poin lebih kecil: pertama +10, berikutnya turun
       const pts = Math.max(5, 10 - (alreadyGuessed - 1) * 2);
       player.score += pts;
       io.to(code).emit('chat', { name: player.name, text, correct: true, pts });
@@ -269,7 +290,7 @@ io.on('connection', (socket) => {
     room.round = 0; room.drawerIndex = 0; room.started = true;
     room.totalRounds = room.players.length * 2;
     room.players.forEach(p => { p.score = 0; p.guessed = false; });
-    io.to(code).emit('game_started', { winScore: WIN_SCORE });
+    io.to(code).emit('game_started', { winScore: room.winScore, clueEnabled: room.clueEnabled });
     startRound(code);
   });
 
