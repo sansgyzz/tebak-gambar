@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Tebak Gambar 🎨</title>
+<script src="/socket.io/socket.io.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;font-family:'Nunito',sans-serif;background:#1565c0;color:#222}
+
+/* ── BG pattern ── */
+body{background-color:#1565c0;background-image:url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%231976d2' fill-opacity='0.4'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")}
+
+/* ── SCREENS ── */
+.screen{display:none}
+.screen.active{display:flex;flex-direction:column;min-height:100vh}
+
+/* ══════════════ MENU ══════════════ */
+#screen-menu{align-items:center;justify-content:center;padding:20px}
+.menu-logo{font-size:42px;font-weight:900;color:#fff;text-shadow:0 4px 0 rgba(0,0,0,.3);letter-spacing:-1px;margin-bottom:4px;text-align:center}
+.menu-logo span{color:#ffd600}
+.menu-sub{color:#90caf9;font-size:14px;font-weight:700;letter-spacing:3px;text-align:center;margin-bottom:24px}
+.menu-box{background:#fff;border-radius:18px;padding:28px 32px;width:100%;max-width:480px;box-shadow:0 8px 0 rgba(0,0,0,.2)}
+.menu-box h2{font-size:18px;font-weight:800;color:#1565c0;margin-bottom:16px;border-bottom:2px solid #e3f2fd;padding-bottom:10px}
+.field-label{font-size:12px;font-weight:800;color:#78909c;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px}
+.field{width:100%;border:2px solid #e0e0e0;border-radius:10px;padding:10px 14px;font-size:15px;font-weight:600;outline:none;font-family:'Nunito',sans-serif;margin-bottom:12px;transition:border .2s}
+.field:focus{border-color:#1565c0}
+.field::placeholder{color:#bdbdbd;font-weight:400}
+
+/* score pills */
+.score-pills{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.sc-pill{background:#e3f2fd;border:2px solid #bbdefb;border-radius:8px;padding:6px 14px;font-weight:800;font-size:14px;cursor:pointer;color:#1565c0;transition:all .15s}
+.sc-pill.active,.sc-pill:hover{background:#1565c0;border-color:#1565c0;color:#fff}
+
+/* toggle */
+.tgl-row{display:flex;align-items:center;justify-content:space-between;background:#f5f5f5;border-radius:10px;padding:10px 14px;margin-bottom:14px;cursor:pointer;border:2px solid #f0f0f0;transition:border .2s}
+.tgl-row:hover{border-color:#1565c0}
+.tgl-info .tgl-name{font-size:14px;font-weight:700;color:#333}
+.tgl-info .tgl-desc{font-size:11px;color:#9e9e9e;margin-top:2px}
+.tgl-sw{width:40px;height:22px;background:#ccc;border-radius:11px;position:relative;transition:background .2s;flex-shrink:0}
+.tgl-sw.on{background:#1565c0}
+.tgl-sw::after{content:'';width:16px;height:16px;background:#fff;border-radius:50%;position:absolute;top:3px;left:3px;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.tgl-sw.on::after{left:21px}
+
+.btn-blue{background:#ffc107;color:#1a237e;border:none;border-radius:10px;padding:12px 20px;font-size:15px;font-weight:800;width:100%;cursor:pointer;font-family:'Nunito',sans-serif;box-shadow:0 4px 0 #f57f17;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:8px}
+.btn-blue:active{transform:translateY(2px);box-shadow:0 2px 0 #f57f17}
+.btn-outline{background:#e3f2fd;color:#1565c0;border:2px solid #bbdefb;border-radius:10px;padding:11px 20px;font-size:14px;font-weight:800;width:100%;cursor:pointer;font-family:'Nunito',sans-serif;margin-top:8px;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:8px}
+.btn-outline:hover{background:#1565c0;color:#fff;border-color:#1565c0}
+.divider{display:flex;align-items:center;gap:10px;margin:14px 0;color:#bdbdbd;font-size:12px;font-weight:700}
+.divider::before,.divider::after{content:'';flex:1;height:1px;background:#e0e0e0}
+
+/* ══════════════ LOBBY ══════════════ */
+#screen-lobby{align-items:center;justify-content:center;padding:20px}
+.lobby-box{background:#fff;border-radius:18px;padding:24px 28px;width:100%;max-width:520px;box-shadow:0 8px 0 rgba(0,0,0,.2)}
+.lobby-title{font-size:20px;font-weight:900;color:#1565c0;margin-bottom:16px;text-align:center}
+.code-badge{font-size:32px;font-weight:900;letter-spacing:10px;text-align:center;color:#1565c0;background:#e3f2fd;border-radius:12px;padding:14px;border:2px dashed #90caf9;margin-bottom:10px}
+.link-row{display:flex;gap:8px;margin-bottom:14px}
+.link-row input{flex:1;background:#f5f5f5;border:2px solid #e0e0e0;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:600;color:#546e7a;outline:none;font-family:'Nunito',sans-serif}
+.link-row button{background:#1565c0;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:800;cursor:pointer;font-family:'Nunito',sans-serif;white-space:nowrap}
+.settings-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.sbadge{background:#e8f5e9;border:1.5px solid #a5d6a7;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;color:#2e7d32}
+.players-label{font-size:12px;font-weight:800;color:#78909c;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
+.chip-wrap{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.chip{display:inline-flex;align-items:center;gap:6px;background:#e3f2fd;border-radius:20px;padding:5px 12px;font-size:13px;font-weight:700;color:#1565c0;border:2px solid #bbdefb}
+.chip-dot{width:8px;height:8px;border-radius:50%}
+.chip.host{background:#fff9c4;border-color:#f9a825;color:#f57f17}
+.host-tag{font-size:10px;background:#f9a825;color:#fff;border-radius:4px;padding:1px 5px;margin-left:3px}
+.start-btn{background:#4caf50;color:#fff;border:none;border-radius:10px;padding:13px 20px;font-size:16px;font-weight:900;width:100%;cursor:pointer;font-family:'Nunito',sans-serif;box-shadow:0 4px 0 #2e7d32;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:8px}
+.start-btn:active{transform:translateY(2px);box-shadow:0 2px 0 #2e7d32}
+.lobby-notice{font-size:13px;color:#90a4ae;font-weight:600;margin-bottom:12px;text-align:center}
+
+/* ══════════════ GAME ══════════════ */
+#screen-game{padding:0;flex-direction:row;height:100vh;overflow:hidden}
+
+/* left sidebar */
+.g-left{width:220px;background:#0d47a1;display:flex;flex-direction:column;overflow-y:auto;flex-shrink:0}
+.g-left-header{padding:12px 14px;background:#0a3880;font-size:13px;font-weight:800;color:#90caf9;text-transform:uppercase;letter-spacing:.06em}
+.player-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.06);transition:background .15s}
+.player-row.drawing{background:rgba(255,255,255,.1)}
+.player-avatar{width:38px;height:38px;border-radius:50%;background:#1976d2;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:900;color:#fff;flex-shrink:0;border:2px solid transparent}
+.player-avatar.me{border-color:#ffd600}
+.player-info{flex:1;min-width:0}
+.player-name{font-size:13px;font-weight:800;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.player-name.me::after{content:' (kamu)';font-size:10px;color:#ffd600;font-weight:700}
+.player-score{font-size:12px;color:#90caf9;font-weight:700}
+.draw-pencil{font-size:16px}
+
+/* center */
+.g-center{flex:1;display:flex;flex-direction:column;overflow:hidden;background:#f5f5f5}
+.g-topbar{background:#1565c0;padding:8px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-shrink:0}
+.round-badge{background:rgba(255,255,255,.15);border-radius:6px;padding:4px 12px;font-size:12px;font-weight:800;color:#fff}
+.word-display{flex:1;text-align:center}
+.word-letters{font-size:24px;font-weight:900;letter-spacing:8px;color:#fff;text-shadow:0 2px 4px rgba(0,0,0,.2)}
+.your-word-tag{background:#ffd600;color:#1a237e;border-radius:8px;padding:4px 16px;font-size:20px;font-weight:900;letter-spacing:2px}
+.timer-badge{background:#ffd600;color:#1a237e;border-radius:8px;padding:4px 14px;font-size:20px;font-weight:900;min-width:52px;text-align:center}
+.timer-badge.warn{background:#ff9800;color:#fff}
+.timer-badge.danger{background:#f44336;color:#fff}
+.win-badge{background:rgba(255,255,255,.12);border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;color:#fff}
+.win-badge b{color:#ffd600}
+
+/* timer bar */
+.timer-bar{height:6px;background:#0d47a1;flex-shrink:0}
+.timer-fill{height:100%;background:#ffd600;transition:width 1s linear,background .5s;width:100%}
+
+/* toolbar */
+.g-toolbar{background:#fff;border-bottom:1px solid #e0e0e0;padding:6px 10px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex-shrink:0}
+.tool-group{display:flex;align-items:center;gap:4px;padding-right:8px;border-right:1px solid #e0e0e0}
+.tool-group:last-child{border:none}
+.c-dot{width:22px;height:22px;border-radius:50%;cursor:pointer;border:3px solid transparent;transition:transform .1s,border-color .1s;flex-shrink:0}
+.c-dot:hover{transform:scale(1.2)}
+.c-dot.active{border-color:#333}
+.sz-btn{background:#f5f5f5;border:2px solid #e0e0e0;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:800;cursor:pointer;color:#555;font-family:'Nunito',sans-serif;transition:all .15s}
+.sz-btn.active,.sz-btn:hover{background:#1565c0;color:#fff;border-color:#1565c0}
+.tool-btn{background:#f5f5f5;border:2px solid #e0e0e0;border-radius:6px;padding:3px 10px;font-size:12px;font-weight:800;cursor:pointer;color:#555;font-family:'Nunito',sans-serif;transition:all .15s}
+.tool-btn:hover{background:#e3f2fd;border-color:#90caf9;color:#1565c0}
+.tool-btn.erase:hover{background:#fce4ec;border-color:#f48fb1;color:#e91e63}
+.tool-btn.clear:hover{background:#ffebee;border-color:#ef9a9a;color:#f44336}
+
+/* draw indicator */
+.draw-indicator{padding:6px 14px;font-size:12px;font-weight:700;flex-shrink:0}
+.draw-badge-g{display:inline-flex;align-items:center;gap:6px;background:#e8f5e9;border:2px solid #a5d6a7;border-radius:8px;padding:4px 14px;color:#2e7d32;font-size:13px;font-weight:800}
+.draw-waiting{display:inline-flex;align-items:center;gap:6px;background:#fff9c4;border:2px solid #f9a825;border-radius:8px;padding:4px 14px;color:#f57f17;font-size:13px;font-weight:800}
+.clue-badge{display:inline-flex;align-items:center;gap:6px;background:#fff3e0;border:2px solid #ffcc80;border-radius:8px;padding:4px 14px;color:#e65100;font-size:13px;font-weight:800;margin-left:8px}
+
+/* canvas area */
+.canvas-area{flex:1;position:relative;overflow:hidden}
+#draw-canvas{display:block;width:100%;height:100%;background:#fff;cursor:crosshair;touch-action:none}
+
+/* word choice overlay */
+.wco{position:absolute;inset:0;background:rgba(21,101,192,.92);backdrop-filter:blur(4px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;z-index:20;padding:20px}
+.wco.hidden{display:none}
+.wco-title{font-size:20px;font-weight:900;color:#fff;text-align:center}
+.wco-sub{font-size:13px;color:#90caf9;text-align:center}
+.wco-cd{font-size:36px;font-weight:900;color:#ffd600;text-shadow:0 2px 8px rgba(0,0,0,.3)}
+.wco-btns{display:flex;flex-direction:column;gap:10px;width:100%;max-width:280px}
+.wco-btn{background:#fff;border:3px solid #e3f2fd;border-radius:12px;padding:14px 24px;font-family:'Nunito',sans-serif;font-size:18px;font-weight:900;color:#1565c0;cursor:pointer;text-align:center;transition:all .15s;box-shadow:0 3px 0 #90caf9}
+.wco-btn:hover{background:#ffd600;border-color:#f9a825;color:#1a237e;box-shadow:0 3px 0 #f57f17;transform:translateY(-1px)}
+.wco-wait{font-size:14px;color:#90caf9;text-align:center;padding:10px;font-weight:700}
+
+/* right sidebar */
+.g-right{width:260px;background:#fff;border-left:1px solid #e0e0e0;display:flex;flex-direction:column;flex-shrink:0}
+.tab-row{display:flex;border-bottom:2px solid #e0e0e0}
+.tab{flex:1;padding:10px;text-align:center;font-size:12px;font-weight:800;cursor:pointer;color:#90a4ae;text-transform:uppercase;letter-spacing:.04em;transition:all .15s;border-bottom:3px solid transparent}
+.tab.active{color:#1565c0;border-bottom-color:#1565c0}
+.tab-content{display:none;flex:1;overflow-y:auto;padding:8px 10px}
+.tab-content.active{display:block}
+.cmsg{font-size:12px;padding:4px 2px;border-bottom:1px solid #f5f5f5;display:flex;gap:4px;flex-wrap:wrap}
+.cmsg:last-child{border:none}
+.cmsg-user{font-weight:800;color:#1565c0}
+.cmsg-text{color:#555}
+.cmsg.correct .cmsg-user,.cmsg.correct .cmsg-text{color:#2e7d32}
+.cmsg.correct{background:#f1f8e9;border-radius:6px;padding:4px 6px;margin:2px 0}
+.cmsg.system{color:#90a4ae;font-style:italic;font-size:11px}
+.cmsg-pts{font-size:10px;background:#c8e6c9;color:#1b5e20;border-radius:3px;padding:1px 4px;font-weight:800;margin-left:2px}
+.log-msg{font-size:11px;padding:3px 2px;color:#90a4ae;border-bottom:1px solid #f5f5f5}
+.log-msg span{font-weight:700;color:#546e7a}
+.chat-row{padding:8px 10px;border-top:2px solid #e0e0e0;flex-shrink:0}
+.chat-row input{width:100%;border:2px solid #e0e0e0;border-radius:8px;padding:8px 12px;font-size:13px;font-weight:600;outline:none;font-family:'Nunito',sans-serif;transition:border .2s}
+.chat-row input:focus{border-color:#1565c0}
+.chat-row input::placeholder{color:#bdbdbd;font-weight:400}
+
+/* ══════════════ RESULT ══════════════ */
+#screen-result{align-items:center;justify-content:center;padding:20px}
+.result-box{background:#fff;border-radius:18px;padding:28px 32px;width:100%;max-width:520px;box-shadow:0 8px 0 rgba(0,0,0,.2)}
+.result-title{font-size:28px;font-weight:900;color:#1565c0;text-align:center;margin-bottom:4px}
+.result-sub{font-size:14px;color:#90a4ae;font-weight:700;text-align:center;margin-bottom:20px}
+.result-list{display:flex;flex-direction:column;gap:8px;margin-bottom:20px}
+.result-item{display:flex;align-items:center;gap:12px;border-radius:12px;padding:12px 14px;border:2px solid #e0e0e0;background:#fafafa}
+.result-item.first{border-color:#ffc107;background:#fff9c4}
+.result-rank{font-size:24px;width:30px;text-align:center}
+.result-info{flex:1}
+.result-name{font-size:15px;font-weight:800;color:#333}
+.result-bar{height:4px;background:#e0e0e0;border-radius:2px;margin-top:6px;overflow:hidden}
+.result-bar-fill{height:100%;background:linear-gradient(90deg,#1565c0,#42a5f5);border-radius:2px}
+.result-pts{font-size:20px;font-weight:900;color:#1565c0}
+.result-btns{display:flex;gap:10px}
+.result-btns button{flex:1}
+
+/* toast */
+#toast{position:fixed;top:16px;left:50%;transform:translateX(-50%) translateY(-12px);background:#333;color:#fff;padding:10px 20px;border-radius:10px;font-size:13px;font-weight:700;display:none;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.3);transition:transform .2s;max-width:90vw;text-align:center;font-family:'Nunito',sans-serif}
+#toast.show{transform:translateX(-50%) translateY(0)}
+
+/* responsive */
+@media(max-width:700px){
+  .g-left{width:70px}.player-info,.g-left-header{display:none}
+  .g-right{width:200px}
+}
+@media(max-width:520px){
+  .g-right{display:none}
+  #screen-game{flex-direction:column}
+  .g-left{width:100%;height:60px;flex-direction:row;overflow-x:auto;overflow-y:hidden}
+  .player-row{border:none;padding:8px}
+}
+</style>
+</head>
+<body>
+<div id="toast"></div>
+
+<!-- ══ MENU ══ -->
+<div id="screen-menu" class="screen active">
+  <div class="menu-logo">🎨 Tebak <span>Gambar</span></div>
+  <div class="menu-sub">DRAW · GUESS · WIN</div>
+  <div class="menu-box">
+    <h2>🏠 Buat Ruangan</h2>
+    <div class="field-label">Nama kamu</div>
+    <input class="field" id="my-name" type="text" placeholder="Masukkan nama..." maxlength="15"/>
+    <div class="field-label">Target poin kemenangan</div>
+    <div class="score-pills" id="score-pills">
+      <div class="sc-pill" onclick="selectScore(50,this)">50</div>
+      <div class="sc-pill" onclick="selectScore(80,this)">80</div>
+      <div class="sc-pill" onclick="selectScore(100,this)">100</div>
+      <div class="sc-pill active" onclick="selectScore(120,this)">120</div>
+      <div class="sc-pill" onclick="selectScore(150,this)">150</div>
+      <div class="sc-pill" onclick="selectScore(200,this)">200</div>
+    </div>
+    <div class="tgl-row" onclick="toggleClue()">
+      <div class="tgl-info">
+        <div class="tgl-name">💡 Clue Otomatis</div>
+        <div class="tgl-desc">Huruf pertama diberikan di detik ke-30</div>
+      </div>
+      <div class="tgl-sw" id="clue-toggle"></div>
+    </div>
+    <button class="btn-blue" onclick="createRoom()">+ Buat Ruangan</button>
+    <div class="divider">atau</div>
+    <div class="field-label">Nama kamu (untuk gabung)</div>
+    <input class="field" id="join-name" type="text" placeholder="Masukkan nama..." maxlength="15"/>
+    <div class="field-label">Kode Ruangan</div>
+    <input class="field" id="join-code" type="text" placeholder="Contoh: AB3XY" maxlength="5" style="text-transform:uppercase"/>
+    <button class="btn-outline" onclick="joinRoom()">Gabung Ruangan →</button>
+  </div>
+</div>
+
+<!-- ══ LOBBY ══ -->
+<div id="screen-lobby" class="screen">
+  <div class="menu-logo" style="font-size:28px;margin-bottom:14px">🎨 Tebak <span>Gambar</span></div>
+  <div class="lobby-box">
+    <div class="lobby-title">Undang Teman ke Ruangan!</div>
+    <div class="code-badge" id="lobby-code">-----</div>
+    <div class="link-row">
+      <input readonly id="room-link-text" value="-"/>
+      <button onclick="copyLink()">📋 Salin Link</button>
+    </div>
+    <div class="settings-row">
+      <div class="sbadge">🏆 Target: <span id="lb-ws">120</span> poin</div>
+      <div class="sbadge">💡 Clue: <span id="lb-clue">Mati</span></div>
+      <div class="sbadge">👥 Maks. 10 pemain</div>
+    </div>
+    <div class="players-label">Pemain di ruangan</div>
+    <div class="chip-wrap" id="lobby-chips"></div>
+    <div class="lobby-notice" id="lobby-notice">Menunggu pemain lain bergabung...</div>
+    <button class="start-btn" id="start-btn" onclick="startGame()" style="display:none">▶ Mulai Game!</button>
+  </div>
+</div>
+
+<!-- ══ GAME ══ -->
+<div id="screen-game" class="screen">
+  <!-- LEFT: player list -->
+  <div class="g-left">
+    <div class="g-left-header">Pemain</div>
+    <div id="player-list"></div>
+  </div>
+
+  <!-- CENTER: canvas -->
+  <div class="g-center">
+    <div class="g-topbar">
+      <div class="round-badge" id="round-label">Ronde 1</div>
+      <div class="word-display" id="word-display"><span class="word-letters" id="word-letters">— — —</span></div>
+      <div class="win-badge">Target: <b id="game-ws">120</b></div>
+      <div class="timer-badge" id="timer-label">—</div>
+    </div>
+    <div class="timer-bar"><div class="timer-fill" id="timer-fill"></div></div>
+    <div class="draw-indicator" id="draw-indicator"></div>
+    <div id="clue-area" style="padding:0 14px 4px"></div>
+    <!-- Toolbar (hanya drawer) -->
+    <div class="g-toolbar" id="toolbar" style="display:none">
+      <div class="tool-group">
+        <div class="c-dot active" style="background:#111" onclick="setColor('#111',this)"></div>
+        <div class="c-dot" style="background:#f44336" onclick="setColor('#f44336',this)"></div>
+        <div class="c-dot" style="background:#e91e63" onclick="setColor('#e91e63',this)"></div>
+        <div class="c-dot" style="background:#9c27b0" onclick="setColor('#9c27b0',this)"></div>
+        <div class="c-dot" style="background:#2196f3" onclick="setColor('#2196f3',this)"></div>
+        <div class="c-dot" style="background:#00bcd4" onclick="setColor('#00bcd4',this)"></div>
+        <div class="c-dot" style="background:#4caf50" onclick="setColor('#4caf50',this)"></div>
+        <div class="c-dot" style="background:#cddc39" onclick="setColor('#cddc39',this)"></div>
+        <div class="c-dot" style="background:#ffc107" onclick="setColor('#ffc107',this)"></div>
+        <div class="c-dot" style="background:#ff5722" onclick="setColor('#ff5722',this)"></div>
+        <div class="c-dot" style="background:#795548" onclick="setColor('#795548',this)"></div>
+        <div class="c-dot" style="background:#fff;border:2px solid #ccc" onclick="setColor('#fff',this)"></div>
+      </div>
+      <div class="tool-group">
+        <span class="sz-btn active" onclick="setSize(3,this)">S</span>
+        <span class="sz-btn" onclick="setSize(9,this)">M</span>
+        <span class="sz-btn" onclick="setSize(20,this)">L</span>
+        <span class="sz-btn" onclick="setSize(35,this)">XL</span>
+      </div>
+      <div class="tool-group">
+        <span class="tool-btn erase" onclick="setEraser()">🧹 Hapus</span>
+        <span class="tool-btn clear" onclick="clearCanvas()">🗑️ Bersih</span>
+      </div>
+    </div>
+    <!-- Canvas -->
+    <div class="canvas-area">
+      <canvas id="draw-canvas"></canvas>
+      <!-- Word choice overlay -->
+      <div class="wco hidden" id="wco">
+        <div class="wco-title" id="wco-title">Pilih kata yang ingin digambar!</div>
+        <div class="wco-sub" id="wco-sub">Kamu punya 15 detik</div>
+        <div class="wco-cd" id="wco-cd">15</div>
+        <div class="wco-btns" id="wco-btns"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: chat & log -->
+  <div class="g-right">
+    <div class="tab-row">
+      <div class="tab active" onclick="switchTab('chat',this)">💬 Jawaban</div>
+      <div class="tab" onclick="switchTab('log',this)">📋 Log</div>
+    </div>
+    <div class="tab-content active" id="tab-chat"></div>
+    <div class="tab-content" id="tab-log"></div>
+    <div class="chat-row">
+      <input type="text" id="guess-input" placeholder="Tebak atau kirim pesan..." maxlength="40" onkeydown="if(event.key==='Enter')sendGuess()"/>
+    </div>
+  </div>
+</div>
+
+<!-- ══ RESULT ══ -->
+<div id="screen-result" class="screen">
+  <div class="menu-logo" style="font-size:28px;margin-bottom:14px">🏆 <span>Hasil Akhir</span></div>
+  <div class="result-box">
+    <div class="result-title" id="result-title">Game Selesai!</div>
+    <div class="result-sub" id="result-sub"></div>
+    <div class="result-list" id="result-list"></div>
+    <div class="result-btns">
+      <button class="btn-blue" onclick="playAgain()">🔄 Main Lagi</button>
+      <button class="btn-outline" onclick="backToMenu()">🏠 Menu</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const socket = io();
+let myName='', myRoom='', isDrawer=false, isHost=false;
+let selectedScore=120, clueEnabled=false, winScore=120;
+let drawColor='#111', drawSize=3, erasing=false;
+let drawing=false, lx=0, ly=0;
+let canvas, ctx, wcInterval=null;
+let lastScores=[];
+const PAL=['#f44336','#e91e63','#9c27b0','#2196f3','#00bcd4','#4caf50','#ffc107','#ff5722','#795548','#607d8b'];
+const MEDALS=['🥇','🥈','🥉','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟'];
+const EMOJIS=['😀','😎','🤩','😜','🥳','😏','🤓','😈','👻','🐱'];
+
+window.addEventListener('load',()=>{
+  const p=new URLSearchParams(location.search);
+  const c=p.get('join');
+  if(c){document.getElementById('join-code').value=c.toUpperCase();document.getElementById('join-name').focus();toast(`🔗 Kode: ${c.toUpperCase()} — isi nama lalu klik Gabung!`,4000);}
+});
+
+function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById(id).classList.add('active');}
+function toast(msg,dur=3000){const t=document.getElementById('toast');t.textContent=msg;t.style.display='block';requestAnimationFrame(()=>t.classList.add('show'));setTimeout(()=>{t.classList.remove('show');setTimeout(()=>t.style.display='none',200);},dur);}
+
+function selectScore(v,el){selectedScore=v;document.querySelectorAll('.sc-pill').forEach(p=>p.classList.remove('active'));el.classList.add('active');}
+function toggleClue(){clueEnabled=!clueEnabled;document.getElementById('clue-toggle').classList.toggle('on',clueEnabled);}
+function switchTab(name,el){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('tab-'+name).classList.add('active');
+}
+
+function addChat(name,text,correct=false,system=false,pts=0){
+  const log=document.getElementById('tab-chat');
+  const div=document.createElement('div');
+  div.className='cmsg'+(correct?' correct':system?' system':'');
+  if(system){div.textContent=text;}
+  else{const p=(correct&&pts)?`<span class="cmsg-pts">+${pts}pt</span>`:'';div.innerHTML=`<span class="cmsg-user">${name}:</span> <span class="cmsg-text">${text}${correct?' ✓':''}</span>${p}`;}
+  log.appendChild(div);log.scrollTop=log.scrollHeight;
+}
+function addLog(html){
+  const log=document.getElementById('tab-log');
+  const div=document.createElement('div');
+  div.className='log-msg';div.innerHTML=html;
+  log.appendChild(div);log.scrollTop=log.scrollHeight;
+}
+
+function renderPlayerList(scores){
+  lastScores=scores;
+  const sorted=[...scores].sort((a,b)=>b.score-a.score);
+  document.getElementById('player-list').innerHTML=sorted.map((p,i)=>`
+    <div class="player-row ${p.drawing?'drawing':''}">
+      <div class="player-avatar ${p.name===myName?'me':''}" style="background:${PAL[i%PAL.length]}">${EMOJIS[i%EMOJIS.length]}</div>
+      <div class="player-info">
+        <div class="player-name ${p.name===myName?'me':''}">${p.name}</div>
+        <div class="player-score">${p.score} poin</div>
+      </div>
+      ${p.drawing?'<span class="draw-pencil">✏️</span>':''}
+    </div>`).join('');
+}
+
+// Actions
+function createRoom(){myName=document.getElementById('my-name').value.trim();if(!myName){toast('⚠ Masukkan namamu!');return;}isHost=true;socket.emit('create_room',{name:myName,winScore:selectedScore,clueEnabled});}
+function joinRoom(){myName=document.getElementById('join-name').value.trim();const code=document.getElementById('join-code').value.trim().toUpperCase();if(!myName){toast('⚠ Masukkan namamu!');return;}if(!code||code.length<4){toast('⚠ Masukkan kode ruangan!');return;}socket.emit('join_room',{name:myName,code});}
+function copyLink(){navigator.clipboard.writeText(`${location.origin}?join=${myRoom}`).then(()=>toast('✅ Link berhasil disalin!'));}
+function startGame(){socket.emit('start_game');}
+function playAgain(){socket.emit('play_again');}
+function backToMenu(){location.href=location.origin;}
+function sendGuess(){const inp=document.getElementById('guess-input');const text=inp.value.trim();if(!text)return;inp.value='';socket.emit(isDrawer?'chat':'guess',{text});}
+
+function startWCCD(sec){clearInterval(wcInterval);let t=sec;const el=document.getElementById('wco-cd');if(el)el.textContent=t;wcInterval=setInterval(()=>{t--;if(el)el.textContent=t;if(t<=0)clearInterval(wcInterval);},1000);}
+function hideWCO(){clearInterval(wcInterval);document.getElementById('wco').classList.add('hidden');}
+
+function renderLobbyChips(players){
+  document.getElementById('lobby-chips').innerHTML=players.map((p,i)=>`<div class="chip ${i===0?'host':''}"><div class="chip-dot" style="background:${PAL[i%PAL.length]}"></div>${p}${i===0?'<span class="host-tag">host</span>':''}</div>`).join('');
+  document.getElementById('lobby-notice').textContent=`${players.length} pemain bergabung`;
+  if(isHost)document.getElementById('start-btn').style.display='flex';
+}
+
+// ── Socket ──────────────────────────────────────────────────
+socket.on('room_created',({code,players,winScore:ws,clueEnabled:ce})=>{
+  myRoom=code;winScore=ws;
+  document.getElementById('lobby-code').textContent=code;
+  document.getElementById('room-link-text').value=`${location.origin}?join=${code}`;
+  document.getElementById('lb-ws').textContent=ws;
+  document.getElementById('lb-clue').textContent=ce?'Nyala':'Mati';
+  renderLobbyChips(players);
+  showScreen('screen-lobby');
+  toast('🎉 Ruangan dibuat!');
+});
+
+socket.on('player_joined',({name,players})=>{
+  renderLobbyChips(players);
+  addLog(`<span>${name}</span> bergabung`);
+  toast(`👋 ${name} bergabung!`);
+});
+
+socket.on('room_info',({winScore:ws,clueEnabled:ce})=>{
+  winScore=ws;
+  document.getElementById('room-link-text').value=`${location.origin}?join=${myRoom}`;
+  document.getElementById('lb-ws').textContent=ws;
+  document.getElementById('lb-clue').textContent=ce?'Nyala':'Mati';
+});
+
+socket.on('player_left',({name,players})=>{
+  renderLobbyChips(players);
+  addLog(`<span>${name}</span> keluar`);
+});
+
+socket.on('game_started',({winScore:ws})=>{
+  winScore=ws;
+  document.getElementById('game-ws').textContent=ws;
+  showScreen('screen-game');
+  setupCanvas();
+  addChat('','— Game dimulai! —',false,true);
+});
+
+socket.on('choosing_word',({round,totalRounds,drawerName,drawerId})=>{
+  isDrawer=(socket.id===drawerId);
+  clearCanvas(false);hideWCO();
+  document.getElementById('round-label').textContent=`Ronde ${round} / ${totalRounds}`;
+  document.getElementById('timer-label').textContent='—';
+  document.getElementById('timer-label').className='timer-badge';
+  document.getElementById('timer-fill').style.width='100%';
+  document.getElementById('timer-fill').style.background='#ffd600';
+  document.getElementById('toolbar').style.display='none';
+  document.getElementById('draw-canvas').style.cursor='default';
+  document.getElementById('clue-area').innerHTML='';
+
+  // Update player list - mark drawer
+  const scores=lastScores.map(p=>({...p,drawing:p.name===drawerName}));
+  renderPlayerList(scores);
+
+  if(!isDrawer){
+    document.getElementById('draw-indicator').innerHTML=`<div class="draw-waiting">⏳ ${drawerName} sedang memilih kata...</div>`;
+    document.getElementById('word-letters').textContent='— — —';
+    const o=document.getElementById('wco');o.classList.remove('hidden');
+    document.getElementById('wco-title').textContent=`${drawerName} sedang memilih kata...`;
+    document.getElementById('wco-sub').textContent='';
+    document.getElementById('wco-cd').textContent='';
+    document.getElementById('wco-btns').innerHTML=`<div class="wco-wait">🖌️ ${drawerName} akan segera menggambar!</div>`;
+  } else {
+    document.getElementById('draw-indicator').innerHTML=`<div class="draw-badge-g">✏️ Giliranmu! Pilih kata yang ingin digambar</div>`;
+    document.getElementById('word-letters').textContent='Pilih kata...';
+  }
+  addChat('',`— Ronde ${round}: ${drawerName} memilih kata —`,false,true);
+  addLog(`Ronde ${round}: <span>${drawerName}</span> memilih kata`);
+});
+
+socket.on('word_choices',(choices)=>{
+  const o=document.getElementById('wco');o.classList.remove('hidden');
+  document.getElementById('wco-title').textContent='Pilih kata yang ingin kamu gambar!';
+  document.getElementById('wco-sub').textContent='Kamu punya 15 detik untuk memilih';
+  document.getElementById('wco-btns').innerHTML=choices.map(w=>`<div class="wco-btn" onclick="chooseWord('${w}')">${w}</div>`).join('');
+  startWCCD(15);
+});
+function chooseWord(w){socket.emit('choose_word',{word:w});hideWCO();}
+
+socket.on('round_start',({round,totalRounds,drawerName,drawerId,wordLength})=>{
+  isDrawer=(socket.id===drawerId);
+  hideWCO();
+  document.getElementById('round-label').textContent=`Ronde ${round} / ${totalRounds}`;
+  document.getElementById('clue-area').innerHTML='';
+  const indicator=document.getElementById('draw-indicator');
+  const toolbar=document.getElementById('toolbar');
+  const cvs=document.getElementById('draw-canvas');
+
+  if(isDrawer){
+    toolbar.style.display='flex';cvs.style.cursor='crosshair';
+    indicator.innerHTML='<div class="draw-badge-g">✏️ Giliranmu menggambar!</div>';
+    // word shown by your_word event
+  } else {
+    toolbar.style.display='none';cvs.style.cursor='default';
+    indicator.innerHTML=`<div class="draw-waiting">🖌️ ${drawerName} sedang menggambar...</div>`;
+    document.getElementById('word-letters').textContent=Array(wordLength).fill('_').join(' ');
+  }
+});
+
+socket.on('your_word',(word)=>{
+  document.getElementById('word-letters').outerHTML=`<span class="your-word-tag" id="word-letters">${word}</span>`;
+  // re-select after outerHTML replacement
+  setTimeout(()=>{const el=document.getElementById('word-letters');if(el)el.className='your-word-tag';},0);
+});
+
+socket.on('clue',(clue)=>{
+  document.getElementById('clue-area').innerHTML=`<div class="clue-badge">💡 Clue: ${clue}</div>`;
+  addChat('','💡 Clue diberikan!',false,true);
+});
+
+socket.on('timer',(val)=>{
+  const el=document.getElementById('timer-label');
+  el.textContent=val;
+  el.className='timer-badge'+(val<=10?' danger':val<=20?' warn':'');
+  const pct=(val/60)*100;
+  const fill=document.getElementById('timer-fill');
+  fill.style.width=pct+'%';
+  fill.style.background=pct>50?'#ffd600':pct>25?'#ff9800':'#f44336';
+});
+
+socket.on('scores',(scores)=>{
+  const withDrawing=scores.map(p=>({...p,drawing:lastScores.find(s=>s.name===p.name)?.drawing||false}));
+  renderPlayerList(withDrawing);
+});
+
+socket.on('chat',({name,text,correct,pts})=>{
+  addChat(name,text,correct,false,pts||0);
+  if(correct) addLog(`<span>${name}</span> menebak dengan benar: <b>${text}</b>`);
+});
+
+socket.on('round_end',({word,scores})=>{
+  addChat('',`⏱ Selesai! Jawaban: "${word}"`,false,true);
+  addLog(`Jawaban: <b>${word}</b>`);
+  renderPlayerList(scores.map(p=>({...p,drawing:false})));
+});
+
+socket.on('draw',({x1,y1,x2,y2,color,size})=>{
+  if(!ctx)return;
+  ctx.strokeStyle=color;ctx.lineWidth=size;
+  ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+});
+socket.on('clear_canvas',()=>clearCanvas(false));
+
+socket.on('game_over',(results)=>{
+  const w=results[0];
+  document.getElementById('result-title').textContent=`🎉 ${w.name} Menang!`;
+  document.getElementById('result-sub').textContent=`${w.name} meraih ${w.score} poin`;
+  const mx=Math.max(...results.map(r=>r.score),1);
+  document.getElementById('result-list').innerHTML=results.map((p,i)=>`
+    <div class="result-item ${i===0?'first':''}">
+      <div class="result-rank">${MEDALS[i]||'🏅'}</div>
+      <div class="result-info">
+        <div class="result-name">${p.name}${p.name===myName?' (kamu)':''}</div>
+        <div class="result-bar"><div class="result-bar-fill" style="width:${Math.round(p.score/mx*100)}%"></div></div>
+      </div>
+      <div class="result-pts">${p.score}</div>
+    </div>`).join('');
+  showScreen('screen-result');
+});
+
+socket.on('error',(msg)=>toast('⚠ '+msg,3500));
+
+// ── Canvas ──────────────────────────────────────────────────
+function setupCanvas(){
+  canvas=document.getElementById('draw-canvas');
+  const area=canvas.parentElement;
+  function resize(){canvas.width=area.clientWidth;canvas.height=area.clientHeight;}
+  resize();
+  window.addEventListener('resize',()=>{resize();});
+  ctx=canvas.getContext('2d');ctx.lineCap='round';ctx.lineJoin='round';
+
+  const pos=(e,t)=>{const r=canvas.getBoundingClientRect();const s=t||e;return[(s.clientX-r.left),(s.clientY-r.top)];};
+  canvas.onmousedown=e=>{if(!isDrawer)return;drawing=true;[lx,ly]=pos(e);};
+  canvas.onmousemove=e=>{if(!drawing||!isDrawer)return;const[x,y]=pos(e);emitDraw(lx,ly,x,y);lx=x;ly=y;};
+  canvas.onmouseup=canvas.onmouseleave=()=>drawing=false;
+  canvas.ontouchstart=e=>{e.preventDefault();if(!isDrawer)return;drawing=true;[lx,ly]=pos(null,e.touches[0]);};
+  canvas.ontouchmove=e=>{e.preventDefault();if(!drawing||!isDrawer)return;const[x,y]=pos(null,e.touches[0]);emitDraw(lx,ly,x,y);lx=x;ly=y;};
+  canvas.ontouchend=()=>drawing=false;
+}
+function emitDraw(x1,y1,x2,y2){
+  const c=erasing?'#fff':drawColor;const s=erasing?drawSize*3:drawSize;
+  ctx.strokeStyle=c;ctx.lineWidth=s;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+  // Normalize coords for other clients
+  const W=canvas.width,H=canvas.height;
+  socket.emit('draw',{x1:x1/W,y1:y1/H,x2:x2/W,y2:y2/H,color:c,size:s,W,H});
+}
+
+// Override draw receiver to normalize coords
+socket.off('draw');
+socket.on('draw',({x1,y1,x2,y2,color,size,W,H})=>{
+  if(!ctx||!canvas)return;
+  const cW=canvas.width,cH=canvas.height;
+  // If sender sent normalized (0-1), use canvas size; otherwise use raw
+  const rx1=W?x1*cW:x1, ry1=H?y1*cH:y1, rx2=W?x2*cW:x2, ry2=H?y2*cH:y2;
+  ctx.strokeStyle=color;ctx.lineWidth=size;
+  ctx.beginPath();ctx.moveTo(rx1,ry1);ctx.lineTo(rx2,ry2);ctx.stroke();
+});
+
+function clearCanvas(emit=true){if(ctx&&canvas)ctx.clearRect(0,0,canvas.width,canvas.height);if(emit&&isDrawer)socket.emit('clear_canvas');}
+function setColor(c,el){drawColor=c;erasing=false;document.querySelectorAll('.c-dot').forEach(b=>b.classList.remove('active'));el.classList.add('active');}
+function setSize(s,el){drawSize=s;document.querySelectorAll('.sz-btn').forEach(b=>b.classList.remove('active'));el.classList.add('active');}
+function setEraser(){erasing=true;}
+</script>
+</body>
+</html>
