@@ -10,6 +10,7 @@ const io = new Server(server);
 app.use(express.static(path.join(__dirname, 'public')));
 
 const WIN_SCORE = 120;
+const WORD_CHOICES = 3; // berapa pilihan kata yang diberikan ke drawer
 
 const WORDS = [
   'kucing','mobil','pizza','pohon','sepeda','ikan','rumah','pesawat',
@@ -17,7 +18,13 @@ const WORDS = [
   'apel','kapal','jam','kamera','sendok','payung','topi','kunci',
   'bola','kursi','pisang','robot','hujan','bulan','naga','jembatan',
   'kipas','lampu','sepatu','kacamata','piring','garpu','televisi',
-  'telepon','kupu-kupu','semangka','donat','roti','balon','pensil',
+  'telepon','semangka','donat','roti','balon','pensil','tas','sepatu',
+  'anjing','burung','harimau','gajah','kuda','sapi','ayam','bebek',
+  'perahu','kereta','motor','truk','bis','helikopter','roket',
+  'apel','mangga','jeruk','anggur','strawberry','semangka','pepaya',
+  'wortel','tomat','bawang','kentang','jagung','cabai',
+  'kursi','meja','lemari','kasur','pintu','jendela','tangga',
+  'pensil','penggaris','gunting','lem','kertas','buku','tas',
 ];
 
 const rooms = {};
@@ -31,6 +38,11 @@ function getRoomBySocket(socketId) {
     if (rooms[code].players.find(p => p.id === socketId)) return code;
   }
   return null;
+}
+
+function getRandomWords(count) {
+  const shuffled = [...WORDS].sort(() => Math.random() - 0.5);
+  return [...new Set(shuffled)].slice(0, count);
 }
 
 function checkWin(code) {
@@ -56,9 +68,41 @@ function startRound(code) {
   const room = rooms[code];
   if (!room) return;
   room.players.forEach(p => (p.guessed = false));
+  room.currentWord = null;
+  room.wordChoices = getRandomWords(WORD_CHOICES);
+  room.choosingWord = true;
 
-  const word = WORDS[Math.floor(Math.random() * WORDS.length)];
+  const drawer = room.players[room.drawerIndex % room.players.length];
+
+  // Beritahu semua bahwa drawer sedang memilih kata
+  io.to(code).emit('choosing_word', {
+    round: room.round + 1,
+    totalRounds: room.totalRounds,
+    drawerName: drawer.name,
+    drawerId: drawer.id,
+  });
+
+  // Kirim pilihan kata hanya ke drawer
+  io.to(drawer.id).emit('word_choices', room.wordChoices);
+
+  broadcastScores(code);
+
+  // Timeout 15 detik untuk pilih kata, kalau tidak dipilih ambil random
+  room.choiceTimeout = setTimeout(() => {
+    if (room.choosingWord) {
+      const auto = room.wordChoices[0];
+      handleWordChosen(code, auto);
+    }
+  }, 15000);
+}
+
+function handleWordChosen(code, word) {
+  const room = rooms[code];
+  if (!room) return;
+  clearTimeout(room.choiceTimeout);
+  room.choosingWord = false;
   room.currentWord = word;
+
   const drawer = room.players[room.drawerIndex % room.players.length];
 
   io.to(code).emit('round_start', {
@@ -70,7 +114,6 @@ function startRound(code) {
   });
 
   io.to(drawer.id).emit('your_word', word);
-  broadcastScores(code);
 
   let timeLeft = 60;
   room.timerInterval = setInterval(() => {
@@ -90,10 +133,10 @@ function endRound(code) {
 
   const drawer = room.players[room.drawerIndex % room.players.length];
   const guessedCount = room.players.filter(p => p.guessed).length;
-  if (guessedCount > 0) drawer.score += guessedCount * 10;
+  if (guessedCount > 0) drawer.score += guessedCount * 5; // kecil untuk drawer
 
   io.to(code).emit('round_end', {
-    word: room.currentWord,
+    word: room.currentWord || '???',
     scores: room.players.map(p => ({ name: p.name, score: p.score })),
   });
 
@@ -117,16 +160,12 @@ function endGame(code) {
 }
 
 io.on('connection', (socket) => {
-  // Auto-join via link
+
   socket.on('check_room', ({ code }) => {
     const room = rooms[code];
-    if (room && !room.started) {
-      socket.emit('room_valid', { code, players: room.players.map(p => p.name) });
-    } else if (room && room.started) {
-      socket.emit('error', 'Game sudah dimulai!');
-    } else {
-      socket.emit('error', 'Ruangan tidak ditemukan!');
-    }
+    if (room && !room.started) socket.emit('room_valid', { code, players: room.players.map(p => p.name) });
+    else if (room && room.started) socket.emit('error', 'Game sudah dimulai!');
+    else socket.emit('error', 'Ruangan tidak ditemukan!');
   });
 
   socket.on('create_room', ({ name }) => {
@@ -134,7 +173,8 @@ io.on('connection', (socket) => {
     rooms[code] = {
       players: [{ id: socket.id, name, score: 0, guessed: false }],
       drawerIndex: 0, round: 0, totalRounds: 10,
-      currentWord: null, timerInterval: null, started: false,
+      currentWord: null, wordChoices: [], choosingWord: false,
+      timerInterval: null, choiceTimeout: null, started: false,
     };
     socket.join(code);
     socket.emit('room_created', { code, players: rooms[code].players.map(p => p.name) });
@@ -145,7 +185,6 @@ io.on('connection', (socket) => {
     if (!room) { socket.emit('error', 'Kode ruangan tidak ditemukan!'); return; }
     if (room.started) { socket.emit('error', 'Game sudah dimulai!'); return; }
     if (room.players.length >= 10) { socket.emit('error', 'Ruangan penuh!'); return; }
-
     room.players.push({ id: socket.id, name, score: 0, guessed: false });
     socket.join(code);
     io.to(code).emit('player_joined', { name, players: room.players.map(p => p.name) });
@@ -163,6 +202,18 @@ io.on('connection', (socket) => {
     startRound(code);
   });
 
+  // Drawer memilih kata
+  socket.on('choose_word', ({ word }) => {
+    const code = getRoomBySocket(socket.id);
+    if (!code) return;
+    const room = rooms[code];
+    if (!room.choosingWord) return;
+    const drawer = room.players[room.drawerIndex % room.players.length];
+    if (socket.id !== drawer.id) return;
+    if (!room.wordChoices.includes(word)) return;
+    handleWordChosen(code, word);
+  });
+
   socket.on('draw', (data) => {
     const code = getRoomBySocket(socket.id);
     if (code) socket.to(code).emit('draw', data);
@@ -177,6 +228,7 @@ io.on('connection', (socket) => {
     const code = getRoomBySocket(socket.id);
     if (!code) return;
     const room = rooms[code];
+    if (!room.currentWord) return;
     const player = room.players.find(p => p.id === socket.id);
     if (!player || player.guessed) return;
     const drawer = room.players[room.drawerIndex % room.players.length];
@@ -186,7 +238,8 @@ io.on('connection', (socket) => {
     if (correct) {
       player.guessed = true;
       const alreadyGuessed = room.players.filter(p => p.guessed).length;
-      const pts = Math.max(20, 60 - (alreadyGuessed - 1) * 10);
+      // Poin lebih kecil: pertama +10, berikutnya turun
+      const pts = Math.max(5, 10 - (alreadyGuessed - 1) * 2);
       player.score += pts;
       io.to(code).emit('chat', { name: player.name, text, correct: true, pts });
       broadcastScores(code);
@@ -231,6 +284,7 @@ io.on('connection', (socket) => {
     io.to(code).emit('player_left', { name, players: room.players.map(p => p.name) });
     if (room.players.length === 0) {
       clearInterval(room.timerInterval);
+      clearTimeout(room.choiceTimeout);
       delete rooms[code];
     }
   });
