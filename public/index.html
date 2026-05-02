@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Tebak Gambar 🎨</title>
+<script src="/socket.io/socket.io.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+<style>
+:root {
+  --bg: #0e0e12;
+  --bg2: #16161d;
+  --bg3: #1e1e28;
+  --border: #2a2a38;
+  --accent: #c8f043;
+  --accent2: #7c5cfc;
+  --accent3: #fc5c7d;
+  --text: #f0f0f5;
+  --muted: #6b6b85;
+  --success: #43e88c;
+  --warn: #f5c842;
+  --r: 14px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
+body{overflow-x:hidden}
+
+/* ── noise overlay ── */
+body::before{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");pointer-events:none;z-index:0;opacity:.5}
+
+/* ── glow blobs ── */
+.blob{position:fixed;border-radius:50%;filter:blur(80px);pointer-events:none;z-index:0}
+.blob1{width:400px;height:400px;background:rgba(124,92,252,.15);top:-100px;left:-100px}
+.blob2{width:350px;height:350px;background:rgba(252,92,125,.1);bottom:-80px;right:-80px}
+.blob3{width:250px;height:250px;background:rgba(200,240,67,.08);top:50%;left:50%;transform:translate(-50%,-50%)}
+
+/* ── screens ── */
+.screen{display:none;position:relative;z-index:1;min-height:100vh;padding:20px}
+.screen.active{display:block}
+
+/* ── header ── */
+.header{display:flex;align-items:center;gap:12px;margin-bottom:32px;padding-bottom:20px;border-bottom:1px solid var(--border)}
+.logo{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.logo-icon{font-size:24px}
+
+/* ── cards ── */
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:24px;margin-bottom:16px;position:relative;overflow:hidden}
+.card::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,.02),transparent);pointer-events:none}
+.card-title{font-family:'Syne',sans-serif;font-size:18px;font-weight:700;margin-bottom:16px;color:var(--text)}
+.card-subtitle{font-size:13px;color:var(--muted);margin-bottom:16px}
+
+/* ── inputs ── */
+label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;display:block;margin-bottom:6px}
+input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 16px;font-size:15px;color:var(--text);outline:none;transition:border .2s,box-shadow .2s;font-family:'DM Sans',sans-serif;margin-bottom:12px}
+input:focus{border-color:var(--accent2);box-shadow:0 0 0 3px rgba(124,92,252,.15)}
+input::placeholder{color:var(--muted)}
+
+/* ── buttons ── */
+.btn{cursor:pointer;border:none;border-radius:10px;font-size:14px;font-weight:500;padding:12px 20px;transition:all .2s;font-family:'DM Sans',sans-serif;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.btn:active{transform:scale(.97)}
+.btn-accent{background:var(--accent);color:#0e0e12;font-weight:700;width:100%}
+.btn-accent:hover{background:#d4f55a;box-shadow:0 0 20px rgba(200,240,67,.3)}
+.btn-ghost{background:var(--bg3);color:var(--text);border:1px solid var(--border);width:100%}
+.btn-ghost:hover{border-color:var(--accent2);background:rgba(124,92,252,.1)}
+.btn-sm{padding:8px 14px;font-size:13px;width:auto}
+.btn-danger{background:rgba(252,92,125,.15);color:var(--accent3);border:1px solid rgba(252,92,125,.3)}
+.btn-danger:hover{background:rgba(252,92,125,.25)}
+
+/* ── divider ── */
+.divider{display:flex;align-items:center;gap:12px;margin:20px 0}
+.divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--border)}
+.divider span{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+
+/* ── lobby ── */
+.room-link-box{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.room-link-text{font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.room-code-badge{font-family:'Syne',sans-serif;font-size:28px;font-weight:800;letter-spacing:8px;text-align:center;color:var(--accent);padding:16px;background:rgba(200,240,67,.06);border-radius:10px;border:1px dashed rgba(200,240,67,.3);margin-bottom:12px}
+.player-chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.chip{display:inline-flex;align-items:center;gap:7px;background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:6px 14px;font-size:13px}
+.chip-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.chip-host{background:rgba(200,240,67,.12);border-color:rgba(200,240,67,.3);color:var(--accent)}
+.host-tag{font-size:10px;background:rgba(200,240,67,.15);color:var(--accent);border-radius:4px;padding:1px 6px;margin-left:2px}
+.win-target{text-align:center;font-size:13px;color:var(--muted);margin-bottom:16px}
+.win-target span{color:var(--accent);font-weight:600}
+
+/* ── game layout ── */
+#screen-game{padding:16px}
+.game-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.round-pill{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:5px 14px;color:var(--muted)}
+.timer-pill{font-family:'Syne',sans-serif;font-size:18px;font-weight:800;color:var(--accent);min-width:36px;text-align:center;background:rgba(200,240,67,.08);border:1px solid rgba(200,240,67,.2);border-radius:20px;padding:4px 14px;transition:color .3s}
+.timer-pill.warn{color:var(--warn)}
+.timer-pill.danger{color:var(--accent3)}
+.timer-bar{height:4px;background:var(--bg3);border-radius:2px;overflow:hidden;margin-bottom:12px}
+.timer-fill{height:100%;width:100%;background:var(--accent);transition:width 1s linear,background .5s;border-radius:2px}
+.game-grid{display:grid;grid-template-columns:1fr 220px;gap:12px}
+@media(max-width:640px){.game-grid{grid-template-columns:1fr}}
+
+/* ── word display ── */
+.word-area{text-align:center;margin-bottom:10px}
+.word-letters{font-family:'Syne',sans-serif;font-size:26px;font-weight:800;letter-spacing:8px;color:var(--text)}
+.your-word-badge{display:inline-block;background:linear-gradient(135deg,rgba(124,92,252,.2),rgba(200,240,67,.1));border:1px solid rgba(124,92,252,.4);border-radius:10px;padding:8px 20px;font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:var(--accent);letter-spacing:2px;margin-bottom:8px}
+.draw-badge{display:inline-block;background:rgba(67,232,140,.1);border:1px solid rgba(67,232,140,.3);border-radius:8px;padding:5px 14px;font-size:12px;color:var(--success);font-weight:600;margin-bottom:8px}
+.drawer-label{display:inline-block;font-size:12px;color:var(--muted);background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:4px 12px;margin-bottom:8px}
+
+/* ── canvas ── */
+.canvas-wrap{position:relative}
+#draw-canvas{display:block;width:100%;border-radius:12px;background:#fff;cursor:crosshair;touch-action:none;border:2px solid var(--border);transition:border-color .2s}
+#draw-canvas.drawing-mode{border-color:var(--accent2);box-shadow:0 0 20px rgba(124,92,252,.2)}
+.toolbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:10px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:8px 10px}
+.c-dot{width:24px;height:24px;border-radius:50%;cursor:pointer;border:3px solid transparent;transition:transform .15s,border-color .15s;flex-shrink:0}
+.c-dot:hover{transform:scale(1.2)}
+.c-dot.active{border-color:#fff;transform:scale(1.1)}
+.sz{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:3px 9px;font-size:12px;cursor:pointer;color:var(--muted);transition:all .15s}
+.sz.active,.sz:hover{background:var(--accent2);color:#fff;border-color:var(--accent2)}
+.tbtn{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:3px 9px;font-size:12px;cursor:pointer;color:var(--muted);transition:all .15s}
+.tbtn:hover{border-color:var(--border);color:var(--text)}
+.tbtn.clear{color:var(--accent3)}
+.tbtn.clear:hover{background:rgba(252,92,125,.1);border-color:rgba(252,92,125,.3)}
+
+/* ── sidebar ── */
+.sidebar{display:flex;flex-direction:column;gap:10px}
+.sidebar-box{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px}
+.sidebar-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;font-weight:600}
+.score-row{display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:13px}
+.score-row:last-child{border:none}
+.score-name{display:flex;align-items:center;gap:6px;color:var(--text);font-weight:500;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.score-pts{color:var(--accent);font-family:'Syne',sans-serif;font-weight:700;font-size:14px}
+.you-tag{font-size:9px;background:rgba(124,92,252,.2);color:var(--accent2);border-radius:3px;padding:1px 4px}
+.score-bar-wrap{margin-top:3px}
+.score-bar{height:3px;background:var(--bg3);border-radius:2px;overflow:hidden;margin-top:2px}
+.score-bar-fill{height:100%;background:linear-gradient(90deg,var(--accent2),var(--accent));border-radius:2px;transition:width .5s}
+
+/* ── chat ── */
+.chat-log{overflow-y:auto;max-height:170px;display:flex;flex-direction:column;gap:2px}
+.cmsg{font-size:12px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.cmsg:last-child{border:none}
+.cmsg-user{font-weight:600;color:var(--text)}
+.cmsg-text{color:var(--muted)}
+.cmsg.correct .cmsg-user{color:var(--success)}
+.cmsg.correct .cmsg-text{color:var(--success);font-weight:600}
+.cmsg.system{color:var(--muted);font-style:italic;font-size:11px}
+.chat-pts{font-size:10px;background:rgba(67,232,140,.15);color:var(--success);border-radius:3px;padding:1px 5px;margin-left:4px}
+.chat-row{display:flex;gap:6px;margin-top:8px}
+.chat-row input{flex:1;margin:0;padding:8px 12px;font-size:13px;border-radius:8px}
+.chat-row button{border-radius:8px;padding:8px 14px;font-size:13px;background:var(--accent2);color:#fff;border:none;cursor:pointer;transition:background .2s}
+.chat-row button:hover{background:#6b4de8}
+
+/* ── toast ── */
+#toast{position:fixed;top:20px;left:50%;transform:translateX(-50%) translateY(-10px);background:var(--bg2);border:1px solid var(--border);color:var(--text);padding:12px 22px;border-radius:10px;font-size:14px;display:none;z-index:999;box-shadow:0 8px 30px rgba(0,0,0,.4);transition:transform .2s}
+#toast.show{transform:translateX(-50%) translateY(0)}
+
+/* ── result ── */
+#screen-result .inner{max-width:600px;margin:0 auto}
+.result-title{font-family:'Syne',sans-serif;font-size:32px;font-weight:800;text-align:center;margin-bottom:6px;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.result-sub{text-align:center;color:var(--muted);font-size:14px;margin-bottom:24px}
+.result-list{display:flex;flex-direction:column;gap:10px;margin-bottom:24px}
+.result-item{display:flex;align-items:center;gap:14px;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px 18px;transition:transform .2s}
+.result-item.first{border-color:rgba(200,240,67,.4);background:rgba(200,240,67,.05)}
+.result-rank{font-size:26px;width:36px;text-align:center}
+.result-info{flex:1}
+.result-name{font-family:'Syne',sans-serif;font-size:16px;font-weight:700;color:var(--text)}
+.result-score{font-size:13px;color:var(--muted);margin-top:2px}
+.result-pts{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;color:var(--accent)}
+.result-bar{height:4px;background:var(--bg3);border-radius:2px;margin-top:8px;overflow:hidden}
+.result-bar-fill{height:100%;background:linear-gradient(90deg,var(--accent2),var(--accent));border-radius:2px}
+.flex-row{display:flex;gap:10px}
+.flex-row .btn{flex:1}
+
+/* ── menu layout ── */
+#screen-menu .inner{max-width:480px;margin:0 auto}
+
+/* ── lobby layout ── */
+#screen-lobby .inner{max-width:520px;margin:0 auto}
+
+/* ── animations ── */
+@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+.card,.result-item{animation:fadeUp .3s ease both}
+</style>
+</head>
+<body>
+<div class="blob blob1"></div>
+<div class="blob blob2"></div>
+<div class="blob blob3"></div>
+<div id="toast"></div>
+
+<!-- ══ MENU ══ -->
+<div id="screen-menu" class="screen active">
+<div class="inner">
+  <div class="header">
+    <span class="logo-icon">🎨</span>
+    <span class="logo">Tebak Gambar</span>
+  </div>
+  <div class="card">
+    <div class="card-title">Masuk ke Game</div>
+    <label>Nama kamu</label>
+    <input id="my-name" type="text" placeholder="Nama pemain..." maxlength="15"/>
+    <button class="btn btn-accent" onclick="createRoom()">+ Buat Ruangan Baru</button>
+    <div class="divider"><span>atau</span></div>
+    <label>Kode Undangan</label>
+    <input id="join-code" type="text" placeholder="Masukkan kode (contoh: AB3XY)" maxlength="5" style="text-transform:uppercase"/>
+    <button class="btn btn-ghost" onclick="joinRoom()">Gabung Ruangan</button>
+  </div>
+  <p style="text-align:center;font-size:12px;color:var(--muted);margin-top:8px">🏆 Menangkan <strong style="color:var(--accent)">120 poin</strong> untuk memenangkan game</p>
+</div>
+</div>
+
+<!-- ══ LOBBY ══ -->
+<div id="screen-lobby" class="screen">
+<div class="inner">
+  <div class="header">
+    <span class="logo-icon">🎨</span>
+    <span class="logo">Tebak Gambar</span>
+  </div>
+  <div class="card">
+    <div class="card-title">Undang Temanmu</div>
+    <div class="card-subtitle">Bagikan link atau kode ini ke teman</div>
+    <div class="room-code-badge" id="lobby-code">-----</div>
+    <div class="room-link-box">
+      <span class="room-link-text" id="room-link-text">-</span>
+      <button class="btn btn-ghost btn-sm" onclick="copyLink()">📋 Salin</button>
+    </div>
+    <div class="win-target">Target menang: <span>120 poin</span> pertama yang mencapai ini menang!</div>
+  </div>
+  <div class="card">
+    <div class="card-title">Pemain di Ruangan</div>
+    <div class="player-chips" id="lobby-chips"></div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:14px" id="lobby-notice">Menunggu pemain lain bergabung...</p>
+    <button class="btn btn-accent" id="start-btn" onclick="startGame()" style="display:none">▶ Mulai Game</button>
+  </div>
+</div>
+</div>
+
+<!-- ══ GAME ══ -->
+<div id="screen-game" class="screen">
+  <div class="game-header">
+    <div class="round-pill" id="round-label">Ronde 1</div>
+    <div class="timer-pill" id="timer-label">60</div>
+  </div>
+  <div class="timer-bar"><div class="timer-fill" id="timer-fill"></div></div>
+  <div class="game-grid">
+    <div>
+      <div id="draw-indicator"></div>
+      <div id="word-area" class="word-area"></div>
+      <div id="toolbar" class="toolbar" style="display:none">
+        <div class="c-dot active" style="background:#1a1a1a" onclick="setColor('#1a1a1a',this)"></div>
+        <div class="c-dot" style="background:#ef4444" onclick="setColor('#ef4444',this)"></div>
+        <div class="c-dot" style="background:#3b82f6" onclick="setColor('#3b82f6',this)"></div>
+        <div class="c-dot" style="background:#22c55e" onclick="setColor('#22c55e',this)"></div>
+        <div class="c-dot" style="background:#f59e0b" onclick="setColor('#f59e0b',this)"></div>
+        <div class="c-dot" style="background:#a855f7" onclick="setColor('#a855f7',this)"></div>
+        <div class="c-dot" style="background:#ec4899" onclick="setColor('#ec4899',this)"></div>
+        <div class="c-dot" style="background:#fff" onclick="setColor('#fff',this)"></div>
+        <span class="sz active" onclick="setSize(3,this)">S</span>
+        <span class="sz" onclick="setSize(9,this)">M</span>
+        <span class="sz" onclick="setSize(20,this)">L</span>
+        <span class="tbtn" onclick="setEraser()">Hapus</span>
+        <span class="tbtn clear" onclick="clearCanvas()">Bersih</span>
+      </div>
+      <div class="canvas-wrap">
+        <canvas id="draw-canvas" height="320"></canvas>
+      </div>
+    </div>
+    <div class="sidebar">
+      <div class="sidebar-box">
+        <div class="sidebar-label">🏆 Skor — target 120</div>
+        <div id="score-list"></div>
+      </div>
+      <div class="sidebar-box" style="flex:1">
+        <div class="sidebar-label">💬 Chat & Tebak</div>
+        <div class="chat-log" id="chat-log"></div>
+        <div class="chat-row">
+          <input type="text" id="guess-input" placeholder="Tebak atau chat..." maxlength="40" onkeydown="if(event.key==='Enter')sendGuess()"/>
+          <button onclick="sendGuess()">→</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ RESULT ══ -->
+<div id="screen-result" class="screen">
+<div class="inner">
+  <div class="header" style="justify-content:center;border:none">
+    <span class="logo-icon">🏆</span>
+    <span class="logo">Hasil Akhir</span>
+  </div>
+  <div class="result-title" id="result-winner-title">Game Selesai!</div>
+  <p class="result-sub" id="result-sub"></p>
+  <div class="result-list" id="result-list"></div>
+  <div class="flex-row">
+    <button class="btn btn-accent" onclick="playAgain()">Main Lagi</button>
+    <button class="btn btn-ghost" onclick="backToMenu()">Menu</button>
+  </div>
+</div>
+</div>
+
+<script>
+const socket = io();
+let myName='', myRoom='', isDrawer=false, isHost=false;
+let drawColor='#1a1a1a', drawSize=3, erasing=false;
+let drawing=false, lx=0, ly=0;
+let canvas, ctx;
+let winScore = 120;
+const PAL=['#6366f1','#ef4444','#22c55e','#f59e0b','#ec4899','#06b6d4','#a855f7','#f97316','#84cc16','#14b8a6'];
+const MEDALS=['🥇','🥈','🥉','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟'];
+
+// ── Auto-join via URL ──────────────────────────────────────
+window.addEventListener('load', () => {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('join');
+  if (code) {
+    document.getElementById('join-code').value = code.toUpperCase();
+    document.getElementById('join-code').focus();
+    toast(`🔗 Kode undangan: ${code.toUpperCase()} — masukkan namamu lalu klik Gabung!`);
+  }
+});
+
+// ── Util ───────────────────────────────────────────────────
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+function toast(msg, dur=3000) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.style.display='block';
+  requestAnimationFrame(() => t.classList.add('show'));
+  setTimeout(() => { t.classList.remove('show'); setTimeout(()=>t.style.display='none', 200); }, dur);
+}
+function addChat(name, text, correct=false, system=false, pts=0) {
+  const log = document.getElementById('chat-log');
+  const div = document.createElement('div');
+  div.className = 'cmsg' + (correct?' correct':system?' system':'');
+  if (system) { div.textContent = text; }
+  else {
+    const ptsTag = (correct && pts) ? `<span class="chat-pts">+${pts}pts</span>` : '';
+    div.innerHTML = `<span class="cmsg-user">${name}:</span> <span class="cmsg-text">${text}${correct?' ✓':''}</span>${ptsTag}`;
+  }
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+function renderScores(scores) {
+  const sorted = [...scores].sort((a,b) => b.score-a.score);
+  const max = Math.max(...sorted.map(p=>p.score), 1);
+  document.getElementById('score-list').innerHTML = sorted.map((p,i) => `
+    <div class="score-row">
+      <span class="score-name">${MEDALS[i]||''} ${p.name}${p.name===myName?'<span class="you-tag">kamu</span>':''}</span>
+      <span class="score-pts">${p.score}</span>
+    </div>
+    <div class="score-bar"><div class="score-bar-fill" style="width:${Math.round(p.score/winScore*100)}%"></div></div>
+  `).join('');
+}
+
+// ── Actions ────────────────────────────────────────────────
+function createRoom() {
+  myName = document.getElementById('my-name').value.trim();
+  if (!myName) { toast('⚠ Masukkan namamu dulu!'); return; }
+  isHost = true;
+  socket.emit('create_room', { name: myName });
+}
+function joinRoom() {
+  myName = document.getElementById('my-name').value.trim();
+  const code = document.getElementById('join-code').value.trim().toUpperCase();
+  if (!myName) { toast('⚠ Masukkan namamu dulu!'); return; }
+  if (!code) { toast('⚠ Masukkan kode ruangan!'); return; }
+  socket.emit('join_room', { name: myName, code });
+}
+function copyLink() {
+  const link = `${location.origin}?join=${myRoom}`;
+  navigator.clipboard.writeText(link).then(() => toast('✅ Link disalin! Bagikan ke temanmu.'));
+}
+function startGame() { socket.emit('start_game'); }
+function playAgain() { socket.emit('play_again'); }
+function backToMenu() { location.href = location.origin; }
+function sendGuess() {
+  const inp = document.getElementById('guess-input');
+  const text = inp.value.trim();
+  if (!text) return;
+  inp.value = '';
+  socket.emit(isDrawer ? 'chat' : 'guess', { text });
+}
+
+// ── Socket ────────────────────────────────────────────────
+socket.on('room_created', ({ code, players }) => {
+  myRoom = code;
+  document.getElementById('lobby-code').textContent = code;
+  document.getElementById('room-link-text').textContent = `${location.origin}?join=${code}`;
+  renderLobbyChips(players);
+  document.getElementById('start-btn').style.display = 'block';
+  showScreen('screen-lobby');
+  toast('🎉 Ruangan dibuat! Bagikan link ke temanmu.');
+});
+
+socket.on('player_joined', ({ name, players }) => {
+  renderLobbyChips(players);
+  addChat('', `${name} bergabung ke ruangan!`, false, true);
+});
+
+socket.on('player_left', ({ name, players }) => {
+  renderLobbyChips(players);
+  addChat('', `${name} keluar dari ruangan.`, false, true);
+});
+
+function renderLobbyChips(players) {
+  document.getElementById('lobby-chips').innerHTML = players.map((p,i) =>
+    `<div class="chip ${i===0?'chip-host':''}">
+      <div class="chip-dot" style="background:${PAL[i%PAL.length]}"></div>
+      ${p}${i===0?'<span class="host-tag">host</span>':''}
+    </div>`
+  ).join('');
+  document.getElementById('lobby-notice').textContent = `${players.length} pemain — menunggu host memulai...`;
+  if (isHost) document.getElementById('start-btn').style.display = 'block';
+}
+
+socket.on('game_started', ({ winScore: ws }) => {
+  winScore = ws || 120;
+  showScreen('screen-game');
+  setupCanvas();
+  addChat('', '— Game dimulai! Raih 120 poin untuk menang —', false, true);
+});
+
+socket.on('round_start', ({ round, totalRounds, drawerName, drawerId, wordLength }) => {
+  isDrawer = (socket.id === drawerId);
+  clearCanvas(false);
+  document.getElementById('round-label').textContent = `Ronde ${round}`;
+  const wordArea = document.getElementById('word-area');
+  const toolbar = document.getElementById('toolbar');
+  const indicator = document.getElementById('draw-indicator');
+  const cvs = document.getElementById('draw-canvas');
+
+  if (isDrawer) {
+    toolbar.style.display = 'flex';
+    cvs.classList.add('drawing-mode');
+    indicator.innerHTML = '<div class="draw-badge">✏️ Giliranmu menggambar!</div>';
+    wordArea.innerHTML = '';
+  } else {
+    toolbar.style.display = 'none';
+    cvs.classList.remove('drawing-mode');
+    indicator.innerHTML = `<div class="drawer-label">🖌️ ${drawerName} sedang menggambar...</div>`;
+    const blanks = Array(wordLength).fill('_').join(' ');
+    wordArea.innerHTML = `<div class="word-letters">${blanks}</div>`;
+  }
+  addChat('', `— Ronde ${round}: ${drawerName} menggambar —`, false, true);
+});
+
+socket.on('your_word', (word) => {
+  document.getElementById('word-area').innerHTML = `<div class="your-word-badge">${word}</div>`;
+});
+
+socket.on('timer', (val) => {
+  const el = document.getElementById('timer-label');
+  el.textContent = val;
+  el.className = 'timer-pill' + (val<=10?' danger':val<=20?' warn':'');
+  const pct = (val/60)*100;
+  const fill = document.getElementById('timer-fill');
+  fill.style.width = pct+'%';
+  fill.style.background = pct>50?'var(--accent)':pct>25?'var(--warn)':'var(--accent3)';
+});
+
+socket.on('scores', renderScores);
+socket.on('chat', ({ name, text, correct, pts }) => addChat(name, text, correct, false, pts||0));
+
+socket.on('round_end', ({ word, scores }) => {
+  addChat('', `⏱ Waktu habis! Jawaban: "${word}"`, false, true);
+  renderScores(scores);
+});
+
+socket.on('draw', ({ x1,y1,x2,y2,color,size }) => {
+  if (!ctx) return;
+  ctx.strokeStyle=color; ctx.lineWidth=size;
+  ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+});
+
+socket.on('clear_canvas', () => clearCanvas(false));
+
+socket.on('game_over', (results) => {
+  const winner = results[0];
+  document.getElementById('result-winner-title').textContent = `${winner.name} Menang! 🎉`;
+  document.getElementById('result-sub').textContent = `${winner.name} berhasil mencapai ${winner.score} poin`;
+  const maxScore = Math.max(...results.map(r=>r.score), 1);
+  document.getElementById('result-list').innerHTML = results.map((p,i) => `
+    <div class="result-item ${i===0?'first':''}">
+      <div class="result-rank">${MEDALS[i]||'🏅'}</div>
+      <div class="result-info">
+        <div class="result-name">${p.name}${p.name===myName?' (kamu)':''}</div>
+        <div class="result-bar"><div class="result-bar-fill" style="width:${Math.round(p.score/maxScore*100)}%"></div></div>
+      </div>
+      <div class="result-pts">${p.score}</div>
+    </div>`).join('');
+  showScreen('screen-result');
+});
+
+socket.on('error', (msg) => toast('⚠ ' + msg));
+
+// ── Canvas ────────────────────────────────────────────────
+function setupCanvas() {
+  canvas = document.getElementById('draw-canvas');
+  canvas.width = canvas.offsetWidth || 500;
+  canvas.height = 320;
+  ctx = canvas.getContext('2d');
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+
+  const getPos = (e, touch) => {
+    const r = canvas.getBoundingClientRect();
+    const src = touch || e;
+    return [(src.clientX-r.left)*(canvas.width/r.width), (src.clientY-r.top)*(canvas.height/r.height)];
+  };
+  canvas.onmousedown = e => { if(!isDrawer)return; drawing=true; [lx,ly]=getPos(e); };
+  canvas.onmousemove = e => { if(!drawing||!isDrawer)return; const [x,y]=getPos(e); emitDraw(lx,ly,x,y); lx=x; ly=y; };
+  canvas.onmouseup = canvas.onmouseleave = () => drawing=false;
+  canvas.ontouchstart = e => { e.preventDefault(); if(!isDrawer)return; drawing=true; [lx,ly]=getPos(null,e.touches[0]); };
+  canvas.ontouchmove = e => { e.preventDefault(); if(!drawing||!isDrawer)return; const [x,y]=getPos(null,e.touches[0]); emitDraw(lx,ly,x,y); lx=x; ly=y; };
+  canvas.ontouchend = () => drawing=false;
+}
+function emitDraw(x1,y1,x2,y2) {
+  const c = erasing?'#fff':drawColor;
+  const s = erasing?drawSize*3:drawSize;
+  ctx.strokeStyle=c; ctx.lineWidth=s;
+  ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  socket.emit('draw',{x1,y1,x2,y2,color:c,size:s});
+}
+function clearCanvas(emit=true) {
+  if(ctx) ctx.clearRect(0,0,canvas.width,canvas.height);
+  if(emit&&isDrawer) socket.emit('clear_canvas');
+}
+function setColor(c,el) {
+  drawColor=c; erasing=false;
+  document.querySelectorAll('.c-dot').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+}
+function setSize(s,el) {
+  drawSize=s;
+  document.querySelectorAll('.sz').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+}
+function setEraser() { erasing=true; }
+</script>
+</body>
+</html>
